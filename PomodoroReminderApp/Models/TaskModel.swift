@@ -39,6 +39,7 @@ struct TaskItem: Identifiable, Codable, Equatable {
 }
 
 class TaskManager: ObservableObject {
+    // @Published:データの変更を通知 プロパティが変更されたときに自動でUIに通知
     @Published var tasks: [TaskItem] = []
     @Published var completedTasks: [TaskItem] = []
     

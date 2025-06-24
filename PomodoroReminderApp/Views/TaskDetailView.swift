@@ -2,7 +2,9 @@ import SwiftUI
 
 struct TaskDetailView: View {
     @Binding var task: TaskItem
+    // オブジェクトの変更を監視: @Publishedプロパティの変更を検知
     @ObservedObject var taskManager: TaskManager
+    // taskManager.tasksが変更されると、この画面が自動更新される
     @Environment(\.dismiss) private var dismiss
     @StateObject private var timerManager = TimerManager()
     

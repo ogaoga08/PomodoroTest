@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict/>
+	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>このアプリはBluetoothを使用してUWBデバイスに接続し、距離測定のパラメータを交換します。</string>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>Nearby Interaction機能を使用してBluetoothで接続されたUWBデバイスとの精密な距離測定を行います。</string>
+	<key>NSNearbyInteractionAllowOnceUsageDescription</key>
+	<string>このアプリはNearby Interaction機能を使用してサードパーティUWBデバイスとの距離測定を行います。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>nearby-interaction</string>
+	</array>
+</dict>
+</plist>

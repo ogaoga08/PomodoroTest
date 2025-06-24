@@ -2,10 +2,12 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
+    @ObservedObject private var uwbManager = UWBManager.shared
     @State private var showingMenu = false
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil
     @State private var showingCompletedTasks = false
+    @State private var showingUWBSettings = false
     
     var todayTasks: [TaskItem] {
         taskManager.tasks.filter { Calendar.current.isDateInToday($0.dueDate) }
@@ -168,7 +170,7 @@ struct ContentView: View {
                     .listStyle(InsetGroupedListStyle())
                 }
                 
-                // フローティングボタン
+                // 追加ボタン
                 VStack {
                     Spacer()
                     HStack {
@@ -191,6 +193,38 @@ struct ContentView: View {
             .navigationTitle("リマインダー")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(content: {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack {
+                        if uwbManager.isUWBActive {
+                            Button(action: { showingUWBSettings = true }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "wave.3.right.circle.fill")
+                                        .foregroundColor(.orange)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("UWB")
+                                            .foregroundColor(.orange)
+                                            .fontWeight(.medium)
+                                            .font(.caption)
+                                        if let distance = uwbManager.currentDistance {
+                                            Text(String(format: "%.2fm", distance))
+                                                .foregroundColor(.orange.opacity(0.8))
+                                                .font(.caption2)
+                                        } else {
+                                            Text("-.--m")
+                                                .foregroundColor(.orange.opacity(0.8))
+                                                .font(.caption2)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                }
+                
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: { showingMenu = true }) {
                         Image(systemName: "ellipsis")
@@ -213,6 +247,9 @@ struct ContentView: View {
             if let taskIndex = taskManager.tasks.firstIndex(where: { $0.id == task.id }) {
                 TaskDetailView(task: $taskManager.tasks[taskIndex], taskManager: taskManager)
             }
+        }
+        .sheet(isPresented: $showingUWBSettings) {
+            UWBSettingsView()
         }
         .environmentObject(taskManager)
     }
