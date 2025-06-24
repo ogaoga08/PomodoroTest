@@ -1,7 +1,94 @@
 import SwiftUI
 import CoreBluetooth
 import NearbyInteraction
+import UserNotifications
 import os
+
+// NotificationManager クラス
+class NotificationManager: ObservableObject {
+    static let shared = NotificationManager()
+    
+    @Published var isAuthorized = false
+    
+    private init() {
+        checkNotificationPermission()
+    }
+    
+    func requestAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                self.isAuthorized = granted
+            }
+            
+            if let error = error {
+                print("通知許可エラー: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                self.isAuthorized = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+    
+    func setSecureBubbleNotification(deviceName: String, isInBubble: Bool) {
+        guard isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "UWBデバイス \(deviceName)"
+        
+        if isInBubble {
+            content.subtitle = "secure bubbleの中にいます（0.2m以内）"
+            content.body = "部屋に入りました。集中モードを開始しましょう。"
+        } else {
+            content.subtitle = "secure bubbleの外にいます（1.2m以上）"
+            content.body = "部屋を出ました。"
+        }
+        
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "SecureBubble_\(deviceName)_\(isInBubble ? "In" : "Out")",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("通知送信エラー: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func setRoomStatusNotification(deviceName: String, message: String) {
+        guard isAuthorized else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = "Territory"
+        content.subtitle = "デバイス: \(deviceName)"
+        content.body = message
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "RoomStatus_\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("通知送信エラー: \(error.localizedDescription)")
+            }
+        }
+    }
+}
 
 // QorvoNIサービスの定義
 struct QorvoNIService {
@@ -20,6 +107,11 @@ enum MessageId: UInt8 {
     case initialize = 0xA
     case configureAndStart = 0xB
     case stop = 0xC
+    
+    // User defined/notification messages
+    case getReserved = 0x20
+    case setReserved = 0x21
+    case iOSNotify = 0x2F
 }
 
 // デバイス状態
@@ -74,6 +166,8 @@ class UWBManager: NSObject, ObservableObject {
     @Published var isUWBActive = false // UWB通信がアクティブかどうか
     @Published var currentDistance: Float? = nil // 現在の距離測定値
     @Published var hasConnectedDevices = false // 接続済みデバイスがあるかどうか
+    @Published var isInSecureBubble = false // secure bubble内にいるかどうか
+    @Published var notificationsEnabled = true // 通知が有効かどうか
     
     private var centralManager: CBCentralManager?
     private var niSessions: [Int: NISession] = [:]
@@ -81,10 +175,17 @@ class UWBManager: NSObject, ObservableObject {
     private var permissionTestSession: NISession?
     private let logger = os.Logger(subsystem: "com.pomodororeminder.uwb", category: "UWBManager")
     private let savedDevicesKey = "saved_uwb_devices"
+    private let notificationManager = NotificationManager.shared
+    
+    // ⚠️Secure bubble のしきい値変更できない？
+    private let secureBubbleInnerThreshold: Float = 0.2 // -.-m以内でbubbleの中
+    private let secureBubbleOuterThreshold: Float = 1.2 // -.-m以上でbubbleの外
+    private var previousSecureBubbleStatus: Bool? = nil // 前回のsecure bubble状態
     
     private override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
+        notificationManager.requestAuthorization()
     }
     
     func startScanning() {
@@ -223,6 +324,12 @@ class UWBManager: NSObject, ObservableObject {
             handleUWBDidStop(device: device)
         case .accessoryPaired:
             handleAccessoryPaired(device: device)
+        case .iOSNotify:
+            handleiOSNotify(data: data, device: device)
+        case .getReserved:
+            logger.debug("Get not implemented in this version")
+        case .setReserved:
+            logger.debug("Set not implemented in this version")
         default:
             logger.info("未対応のメッセージ: \(String(describing: messageId))")
         }
@@ -233,16 +340,10 @@ class UWBManager: NSObject, ObservableObject {
         
         do {
             // iOS 15対応: データから直接設定を作成
-            let configuration: NINearbyAccessoryConfiguration
-            if #available(iOS 16.0, *) {
-                configuration = try NINearbyAccessoryConfiguration(
-                    accessoryData: configData,
-                    bluetoothPeerIdentifier: device.peripheral.identifier
-                )
-            } else {
-                // iOS 15では基本的な設定を使用
-                configuration = try NINearbyAccessoryConfiguration(data: configData)
-            }
+            let configuration = try NINearbyAccessoryConfiguration(
+                accessoryData: configData,
+                bluetoothPeerIdentifier: device.peripheral.identifier
+            )
             
             accessoryConfigurations[device.uniqueID] = configuration
             
@@ -298,6 +399,47 @@ class UWBManager: NSObject, ObservableObject {
         sendDataToDevice(initMessage, device: device)
         
         logger.info("アクセサリペアリング完了: \(device.name)")
+    }
+    
+    private func handleiOSNotify(data: Data, device: UWBDevice) {
+        guard notificationsEnabled else { return }
+        
+        // データの最初の3バイトをスキップして、メッセージを取得
+        if data.count > 3, let message = String(bytes: data.advanced(by: 3), encoding: .utf8) {
+            notificationManager.setRoomStatusNotification(deviceName: device.name, message: message)
+            logger.info("iOSNotify受信: \(device.name) - \(message)")
+        }
+    }
+    
+    private func checkSecureBubbleStatus(distance: Float, device: UWBDevice) {
+        let isCurrentlyInBubble: Bool
+        
+        if distance <= secureBubbleInnerThreshold {
+            isCurrentlyInBubble = true
+        } else if distance >= secureBubbleOuterThreshold {
+            isCurrentlyInBubble = false
+        } else {
+            // 0.2m〜1.2mの間は前回の状態を保持（ヒステリシス）
+            isCurrentlyInBubble = isInSecureBubble
+        }
+        
+        // 状態が変化した場合のみ通知
+        if previousSecureBubbleStatus != isCurrentlyInBubble {
+            DispatchQueue.main.async {
+                self.isInSecureBubble = isCurrentlyInBubble
+            }
+            
+            if notificationsEnabled {
+                notificationManager.setSecureBubbleNotification(
+                    deviceName: device.name,
+                    isInBubble: isCurrentlyInBubble
+                )
+            }
+            
+            previousSecureBubbleStatus = isCurrentlyInBubble
+            
+            logger.info("Secure Bubble状態変化: \(device.name) - \(isCurrentlyInBubble ? "内部" : "外部") - 距離: \(distance)m")
+        }
     }
     
     private func findDevice(peripheral: CBPeripheral) -> UWBDevice? {
@@ -742,6 +884,9 @@ extension UWBManager: NISessionDelegate {
         }
         updateConnectionStatus()
         
+        // Secure bubble判定を実行
+        checkSecureBubbleStatus(distance: distance, device: device)
+        
         logger.info("距離更新: \(device.name) - \(distance)m")
     }
     
@@ -849,6 +994,33 @@ struct UWBSettingsView: View {
                         .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
+                }
+                .padding(.horizontal)
+                
+                // Secure Bubble状態表示
+                if uwbManager.isUWBActive {
+                    HStack {
+                        Image(systemName: uwbManager.isInSecureBubble ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
+                        Text("Secure Bubble: \(uwbManager.isInSecureBubble ? "内部" : "外部")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // 通知設定
+                HStack {
+                    Image(systemName: "bell")
+                        .foregroundColor(uwbManager.notificationsEnabled ? .blue : .gray)
+                    Text("通知")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    
+                    Toggle("", isOn: $uwbManager.notificationsEnabled)
+                        .scaleEffect(0.8)
                 }
                 .padding(.horizontal)
                 

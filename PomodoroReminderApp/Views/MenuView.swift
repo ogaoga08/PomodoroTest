@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingUWBSettings = false
+    @State private var showingRoomSettings = false
     
     var body: some View {
         NavigationView {
@@ -24,7 +25,7 @@ struct MenuView: View {
                 }
                 
                 Button(action: {
-                    // 部屋設定の実装（将来）
+                    showingRoomSettings = true
                 }) {
                     HStack {
                         Image(systemName: "house")
@@ -58,7 +59,7 @@ struct MenuView: View {
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("完了") {
                         dismiss()
                     }
@@ -67,6 +68,9 @@ struct MenuView: View {
         }
         .sheet(isPresented: $showingUWBSettings) {
             UWBSettingsView()
+        }
+        .sheet(isPresented: $showingRoomSettings) {
+            RoomSetupView()
         }
     }
 }

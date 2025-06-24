@@ -17,6 +17,7 @@
 		1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2D /* TaskDetailView.swift */; };
 		1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2F /* MenuView.swift */; };
 		1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */; };
+		541F008D2E0A5C010092A3B9 /* RoomSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 		1A1A1A1A1A1A1A2F /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UWBSettingsView.swift; sourceTree = "<group>"; };
 		541F00892E0A37F70092A3B9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomSetupView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +100,7 @@
 				1A1A1A1A1A1A1A2B /* AddTaskView.swift */,
 				1A1A1A1A1A1A1A2D /* TaskDetailView.swift */,
 				1A1A1A1A1A1A1A2F /* MenuView.swift */,
+				541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */,
 				1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */,
 			);
 			path = Views;
@@ -179,6 +182,7 @@
 				1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */,
 				1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */,
 				1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */,
+				541F008D2E0A5C010092A3B9 /* RoomSetupView.swift in Sources */,
 				1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A1A /* PomodoroReminderApp.swift in Sources */,
 			);
