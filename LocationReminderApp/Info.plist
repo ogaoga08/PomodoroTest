@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>リマインダー機能を使用します。</string>
+	<string>リマインダーアプリと連携します。</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict/>

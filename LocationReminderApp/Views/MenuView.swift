@@ -4,6 +4,8 @@ struct MenuView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingUWBSettings = false
     @State private var showingRoomSettings = false
+    @State private var showingOnboarding = false
+    @State private var showingScreenTimeSettings = false
     
     var body: some View {
         NavigationView {
@@ -25,7 +27,23 @@ struct MenuView: View {
                 }
                 
                 Button(action: {
-                    // 使い方の実装（将来）
+                    showingScreenTimeSettings = true
+                }) {
+                    HStack {
+                        Image(systemName: "hourglass")
+                            .foregroundColor(.purple)
+                            .frame(width: 24)
+                        Text("Screen Time設定")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Button(action: {
+                    showingOnboarding = true
                 }) {
                     HStack {
                         Image(systemName: "questionmark.circle")
@@ -52,6 +70,12 @@ struct MenuView: View {
         }
         .sheet(isPresented: $showingUWBSettings) {
             UWBSettingsView()
+        }
+        .sheet(isPresented: $showingScreenTimeSettings) {
+            ScreenTimeSettingsView()
+        }
+        .sheet(isPresented: $showingOnboarding) {
+            OnboardingView()
         }
     }
 }

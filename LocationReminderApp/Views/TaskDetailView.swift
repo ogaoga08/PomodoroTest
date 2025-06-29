@@ -11,7 +11,6 @@ struct TaskDetailView: View {
     @State private var editedMemo: String = ""
     @State private var editedDueDate: Date = Date()
     @State private var editedHasTime: Bool = false
-    @State private var showingDeleteAlert = false
     
     var body: some View {
         NavigationView {
@@ -63,6 +62,11 @@ struct TaskDetailView: View {
                                 DatePicker("期限日時", selection: $editedDueDate, displayedComponents: [.date, .hourAndMinute])
                                     .datePickerStyle(.compact)
                                     .labelsHidden()
+                                    .environment(\.locale, Locale(identifier: "ja_JP"))
+                                    .onAppear {
+                                        // 5分刻みに設定
+                                        UIDatePicker.appearance().minuteInterval = 5
+                                    }
                             } else {
                                 DatePicker("期限日", selection: $editedDueDate, displayedComponents: [.date])
                                     .datePickerStyle(.compact)
@@ -72,7 +76,7 @@ struct TaskDetailView: View {
                     }
                     .padding(.horizontal)
                     
-                    Spacer(minLength: 80)
+                    Spacer(minLength: 40)
                 }
             }
             .navigationTitle("タスク編集")
@@ -90,53 +94,13 @@ struct TaskDetailView: View {
                     }
                 }
             })
-            .overlay(alignment: .bottom) {
-                // 下部ボタン
-                HStack(spacing: 20) {
-                    Button(action: {
-                        showingDeleteAlert = true
-                    }) {
-                        Text("削除")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(Color.red)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    
-                    Button(action: {
-                        taskManager.completeTask(task)
-                        dismiss()
-                    }) {
-                        Text("完了")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(Color.green)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 30)
-                .background(Color(.systemBackground))
-            }
+
         }
         .onAppear {
             editedTitle = task.title
             editedMemo = task.memo
             editedDueDate = task.dueDate
             editedHasTime = task.hasTime
-        }
-        .alert("タスクを削除", isPresented: $showingDeleteAlert) {
-            Button("削除", role: .destructive) {
-                taskManager.deleteTask(task)
-                dismiss()
-            }
-            Button("キャンセル", role: .cancel) { }
-        } message: {
-            Text("このタスクを削除しますか？この操作は取り消せません。")
         }
     }
     

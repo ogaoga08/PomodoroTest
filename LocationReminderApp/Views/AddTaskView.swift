@@ -15,32 +15,32 @@ struct AddTaskView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         // ヘッダー
-                        HStack {
-                            Button("キャンセル") {
-                                dismiss()
+                        ZStack {
+                            HStack {
+                                Button("キャンセル") {
+                                    dismiss()
+                                }
+                                .foregroundColor(.blue)
+                                
+                                Spacer()
+                                
+                                Button("追加") {
+                                    let newTask = TaskItem(
+                                        title: title,
+                                        memo: memo,
+                                        dueDate: dueDate,
+                                        hasTime: hasTime
+                                    )
+                                    taskManager.addTask(newTask)
+                                    dismiss()
+                                }
+                                .foregroundColor(title.isEmpty ? .gray : .blue)
+                                .disabled(title.isEmpty)
                             }
-                            .foregroundColor(.blue)
-                            
-                            Spacer()
                             
                             Text("新しいタスク")
                                 .font(.headline)
                                 .fontWeight(.semibold)
-                            
-                            Spacer()
-                            
-                            Button("追加") {
-                                let newTask = TaskItem(
-                                    title: title,
-                                    memo: memo,
-                                    dueDate: dueDate,
-                                    hasTime: hasTime
-                                )
-                                taskManager.addTask(newTask)
-                                dismiss()
-                            }
-                            .foregroundColor(title.isEmpty ? .gray : .blue)
-                            .disabled(title.isEmpty)
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
@@ -89,14 +89,24 @@ struct AddTaskView: View {
                                     
                                     Spacer()
                                     
-                                    Toggle("時刻を設定", isOn: $hasTime)
-                                        .font(.caption)
+                                    HStack(spacing: 8) {
+                                        Text("時刻を設定")
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                        Toggle("", isOn: $hasTime)
+                                            .labelsHidden()
+                                    }
                                 }
                                 
                                 if hasTime {
                                     DatePicker("期限日時", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
                                         .datePickerStyle(.compact)
                                         .labelsHidden()
+                                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                                        .onAppear {
+                                            // 5分刻みに設定
+                                            UIDatePicker.appearance().minuteInterval = 5
+                                        }
                                 } else {
                                     DatePicker("期限日", selection: $dueDate, displayedComponents: [.date])
                                         .datePickerStyle(.compact)

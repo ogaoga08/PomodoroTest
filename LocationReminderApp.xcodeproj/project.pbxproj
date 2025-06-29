@@ -16,6 +16,9 @@
 		1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2D /* TaskDetailView.swift */; };
 		1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2F /* MenuView.swift */; };
 		1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */; };
+		543113802E119696000EFA3A /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5431137F2E119696000EFA3A /* OnboardingView.swift */; };
+		543113822E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md in Resources */ = {isa = PBXBuildFile; fileRef = 543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */; };
+		543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +33,9 @@
 		1A1A1A1A1A1A1A2F /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UWBSettingsView.swift; sourceTree = "<group>"; };
 		541F00892E0A37F70092A3B9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		5431137F2E119696000EFA3A /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SCREEN_TIME_IMPLEMENTATION.md; sourceTree = "<group>"; };
+		543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -46,6 +52,7 @@
 		1A1A1A1A1A1A1A0D = {
 			isa = PBXGroup;
 			children = (
+				543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */,
 				1A1A1A1A1A1A1A18 /* LocationReminderApp */,
 				1A1A1A1A1A1A1A17 /* Products */,
 			);
@@ -92,6 +99,8 @@
 		1A1A1A1A1A1A1A34 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */,
+				5431137F2E119696000EFA3A /* OnboardingView.swift */,
 				1A1A1A1A1A1A1A2B /* AddTaskView.swift */,
 				1A1A1A1A1A1A1A2D /* TaskDetailView.swift */,
 				1A1A1A1A1A1A1A2F /* MenuView.swift */,
@@ -158,6 +167,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				543113822E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md in Resources */,
 				1A1A1A1A1A1A1A21 /* Preview Assets.xcassets in Resources */,
 				1A1A1A1A1A1A1A1E /* Assets.xcassets in Resources */,
 			);
@@ -172,9 +182,11 @@
 			files = (
 				1A1A1A1A1A1A1A1C /* ContentView.swift in Sources */,
 				1A1A1A1A1A1A1A28 /* TaskModel.swift in Sources */,
+				543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */,
 				1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */,
 				1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */,
+				543113802E119696000EFA3A /* OnboardingView.swift in Sources */,
 				1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A1A /* LocationReminderApp.swift in Sources */,
 			);

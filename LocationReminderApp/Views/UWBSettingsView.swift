@@ -3,6 +3,7 @@ import CoreBluetooth
 import NearbyInteraction
 import UserNotifications
 import os
+import Foundation
 
 // NotificationManager クラス
 class NotificationManager: ObservableObject {
@@ -34,15 +35,25 @@ class NotificationManager: ObservableObject {
         }
     }
     
-    func setRoomStatusNotification(deviceName: String, isInBubble: Bool) {
+    func setRoomStatusNotification(deviceName: String, isInBubble: Bool, todayTasks: [TaskItem] = []) {
         guard isAuthorized else { return }
         
         let content = UNMutableNotificationContent()
         content.title = "Territory"
         
         if isInBubble {
+            // 当日までのタスク（期限切れも含む）がある場合のみ通知を表示
+            guard !todayTasks.isEmpty else { return }
+            
             content.subtitle = "🔥タスク開始の時間です🔥"
-            content.body = "部屋に入りました！今日のタスクを始めましょう！"
+            
+            if todayTasks.count == 1 {
+                // 単一タスクの場合、タスク名を含める
+                content.body = "\"\(todayTasks.first!.title)\"を始めましょう！"
+            } else {
+                // 複数タスクの場合
+                content.body = "やるべきタスクがあります！始めましょう！"
+            }
         } else {
             content.subtitle = "🎐少し休憩しましょう🎐"
             content.body = "部屋の外に出ました。深呼吸しましょう。"
@@ -145,6 +156,9 @@ class UWBManager: NSObject, ObservableObject {
     @Published var isInSecureBubble = false // secure bubble内にいるかどうか
     @Published var notificationsEnabled = true // 通知が有効かどうか
     
+    // TaskManagerへの参照を追加
+    weak var taskManager: EventKitTaskManager?
+    
     private var centralManager: CBCentralManager?
     private var niSessions: [Int: NISession] = [:]
     private var accessoryConfigurations: [Int: NINearbyAccessoryConfiguration] = [:]
@@ -162,6 +176,16 @@ class UWBManager: NSObject, ObservableObject {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
         notificationManager.requestAuthorization()
+    }
+    
+    // 当日までのタスク（期限切れも含む）を取得するメソッド
+    private func getTasksDueUntilToday() -> [TaskItem] {
+        guard let taskManager = taskManager else { return [] }
+        let today = Calendar.current.startOfDay(for: Date())
+        return taskManager.tasks.filter { task in
+            let taskDueDate = Calendar.current.startOfDay(for: task.dueDate)
+            return taskDueDate <= today
+        }
     }
     
     func startScanning() {
@@ -386,7 +410,12 @@ class UWBManager: NSObject, ObservableObject {
             // これにより、アプリ内の状態更新とのタイムラグの問題を解消する
             let isInBubbleBasedOnMessage = message.contains("in")
             
-            notificationManager.setRoomStatusNotification(deviceName: device.name, isInBubble: isInBubbleBasedOnMessage)
+            let todayTasks = getTasksDueUntilToday()
+            notificationManager.setRoomStatusNotification(
+                deviceName: device.name,
+                isInBubble: isInBubbleBasedOnMessage,
+                todayTasks: todayTasks
+            )
             logger.info("iOSNotify受信: \(device.name) - \(message)")
         }
     }
@@ -410,6 +439,16 @@ class UWBManager: NSObject, ObservableObject {
             }
             
             previousSecureBubbleStatus = isCurrentlyInBubble
+            
+            // 通知設定が有効な場合のみ通知を送信
+            if notificationsEnabled {
+                let todayTasks = getTasksDueUntilToday()
+                notificationManager.setRoomStatusNotification(
+                    deviceName: device.name,
+                    isInBubble: isCurrentlyInBubble,
+                    todayTasks: todayTasks
+                )
+            }
             
             logger.info("Secure Bubble状態変化: \(device.name) - \(isCurrentlyInBubble ? "内部" : "外部") - 距離: \(distance)m")
         }
