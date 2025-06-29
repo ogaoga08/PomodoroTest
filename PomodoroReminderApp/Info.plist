@@ -6,20 +6,14 @@
 	<array>
 		<dict/>
 	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>このアプリはBluetoothを使用してUWBデバイスに接続し、距離測定のパラメータを交換します。</string>
-	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Nearby Interaction機能を使用してBluetoothで接続されたUWBデバイスとの精密な距離測定を行います。</string>
-	<key>NSNearbyInteractionAllowOnceUsageDescription</key>
-	<string>このアプリはNearby Interaction機能を使用してサードパーティUWBデバイスとの距離測定を行います。</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>部屋への入退室時にSecure Bubble状態の通知を送信するために通知機能を使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
 		<string>nearby-interaction</string>
+		<string>processing</string>
+		<string>fetch</string>
 	</array>
 </dict>
 </plist>
