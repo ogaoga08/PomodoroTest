@@ -34,44 +34,20 @@ class NotificationManager: ObservableObject {
         }
     }
     
-    func setSecureBubbleNotification(deviceName: String, isInBubble: Bool) {
-        guard isAuthorized else { return }
-        
-        let content = UNMutableNotificationContent()
-        content.title = "UWBデバイス \(deviceName)"
-        
-        if isInBubble {
-            content.subtitle = "secure bubbleの中にいます（0.2m以内）"
-            content.body = "部屋に入りました。集中モードを開始しましょう。"
-        } else {
-            content.subtitle = "secure bubbleの外にいます（1.2m以上）"
-            content.body = "部屋を出ました。"
-        }
-        
-        content.sound = .default
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        
-        let request = UNNotificationRequest(
-            identifier: "SecureBubble_\(deviceName)_\(isInBubble ? "In" : "Out")",
-            content: content,
-            trigger: trigger
-        )
-        
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("通知送信エラー: \(error.localizedDescription)")
-            }
-        }
-    }
-    
-    func setRoomStatusNotification(deviceName: String, message: String) {
+    func setRoomStatusNotification(deviceName: String, isInBubble: Bool) {
         guard isAuthorized else { return }
         
         let content = UNMutableNotificationContent()
         content.title = "Territory"
-        content.subtitle = "デバイス: \(deviceName)"
-        content.body = message
+        
+        if isInBubble {
+            content.subtitle = "🔥タスク開始の時間です🔥"
+            content.body = "部屋に入りました！今日のタスクを始めましょう！"
+        } else {
+            content.subtitle = "🎐少し休憩しましょう🎐"
+            content.body = "部屋の外に出ました。深呼吸しましょう。"
+        }
+        
         content.sound = .default
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
@@ -406,7 +382,11 @@ class UWBManager: NSObject, ObservableObject {
         
         // データの最初の3バイトをスキップして、メッセージを取得
         if data.count > 3, let message = String(bytes: data.advanced(by: 3), encoding: .utf8) {
-            notificationManager.setRoomStatusNotification(deviceName: device.name, message: message)
+            // デバイスからのメッセージを直接解釈して、bubbleの状態を判断する
+            // これにより、アプリ内の状態更新とのタイムラグの問題を解消する
+            let isInBubbleBasedOnMessage = message.contains("in")
+            
+            notificationManager.setRoomStatusNotification(deviceName: device.name, isInBubble: isInBubbleBasedOnMessage)
             logger.info("iOSNotify受信: \(device.name) - \(message)")
         }
     }
@@ -429,13 +409,6 @@ class UWBManager: NSObject, ObservableObject {
                 self.isInSecureBubble = isCurrentlyInBubble
             }
             
-            if notificationsEnabled {
-                notificationManager.setSecureBubbleNotification(
-                    deviceName: device.name,
-                    isInBubble: isCurrentlyInBubble
-                )
-            }
-            
             previousSecureBubbleStatus = isCurrentlyInBubble
             
             logger.info("Secure Bubble状態変化: \(device.name) - \(isCurrentlyInBubble ? "内部" : "外部") - 距離: \(distance)m")
@@ -453,8 +426,8 @@ class UWBManager: NSObject, ObservableObject {
     // 接続状態を更新
     private func updateConnectionStatus() {
         DispatchQueue.main.async {
-            let connectedDevices = self.discoveredDevices.filter { 
-                $0.status == .connected || $0.status == .paired || $0.status == .ranging 
+            let connectedDevices = self.discoveredDevices.filter {
+                $0.status == .connected || $0.status == .paired || $0.status == .ranging
             }
             self.hasConnectedDevices = !connectedDevices.isEmpty
             
@@ -1258,4 +1231,4 @@ struct DeviceRowView: View {
 
 #Preview {
     UWBSettingsView()
-} 
+}
