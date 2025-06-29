@@ -7,8 +7,6 @@ struct TaskItem: Identifiable, Codable, Equatable {
     var memo: String
     var dueDate: Date
     var hasTime: Bool = false // 時刻が設定されているかどうか
-    var workDuration: Int = 25 // 分
-    var breakDuration: Int = 5 // 分
     var isCompleted: Bool = false
     var completedDate: Date?
     

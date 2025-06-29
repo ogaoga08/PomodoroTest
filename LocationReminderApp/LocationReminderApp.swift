@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PomodoroReminderApp: App {
+struct LocationReminderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

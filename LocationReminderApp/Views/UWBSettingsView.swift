@@ -39,7 +39,6 @@ class NotificationManager: ObservableObject {
         
         let content = UNMutableNotificationContent()
         content.title = "Territory"
-        //
         
         if isInBubble {
             content.subtitle = "🔥タスク開始の時間です🔥"

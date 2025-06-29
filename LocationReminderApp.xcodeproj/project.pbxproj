@@ -7,33 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1A1A1A1A1A1A1A1A /* PomodoroReminderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A19 /* PomodoroReminderApp.swift */; };
+		1A1A1A1A1A1A1A1A /* LocationReminderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A19 /* LocationReminderApp.swift */; };
 		1A1A1A1A1A1A1A1C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A1B /* ContentView.swift */; };
 		1A1A1A1A1A1A1A1E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A1D /* Assets.xcassets */; };
 		1A1A1A1A1A1A1A21 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A20 /* Preview Assets.xcassets */; };
 		1A1A1A1A1A1A1A28 /* TaskModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A27 /* TaskModel.swift */; };
-		1A1A1A1A1A1A1A2A /* TimerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A29 /* TimerManager.swift */; };
 		1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2B /* AddTaskView.swift */; };
 		1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2D /* TaskDetailView.swift */; };
 		1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2F /* MenuView.swift */; };
 		1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */; };
-		541F008D2E0A5C010092A3B9 /* RoomSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1A1A1A1A1A1A1A16 /* PomodoroReminderApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PomodoroReminderApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1A1A1A1A1A1A1A19 /* PomodoroReminderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PomodoroReminderApp.swift; sourceTree = "<group>"; };
+		1A1A1A1A1A1A1A16 /* LocationReminderApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocationReminderApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A1A1A1A1A1A1A19 /* LocationReminderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationReminderApp.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A1B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A1D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A20 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A27 /* TaskModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskModel.swift; sourceTree = "<group>"; };
-		1A1A1A1A1A1A1A29 /* TimerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerManager.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A2B /* AddTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTaskView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A2D /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A2F /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UWBSettingsView.swift; sourceTree = "<group>"; };
 		541F00892E0A37F70092A3B9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomSetupView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,7 +46,7 @@
 		1A1A1A1A1A1A1A0D = {
 			isa = PBXGroup;
 			children = (
-				1A1A1A1A1A1A1A18 /* PomodoroReminderApp */,
+				1A1A1A1A1A1A1A18 /* LocationReminderApp */,
 				1A1A1A1A1A1A1A17 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -58,23 +54,23 @@
 		1A1A1A1A1A1A1A17 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1A1A1A1A1A1A1A16 /* PomodoroReminderApp.app */,
+				1A1A1A1A1A1A1A16 /* LocationReminderApp.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		1A1A1A1A1A1A1A18 /* PomodoroReminderApp */ = {
+		1A1A1A1A1A1A1A18 /* LocationReminderApp */ = {
 			isa = PBXGroup;
 			children = (
 				541F00892E0A37F70092A3B9 /* Info.plist */,
-				1A1A1A1A1A1A1A19 /* PomodoroReminderApp.swift */,
+				1A1A1A1A1A1A1A19 /* LocationReminderApp.swift */,
 				1A1A1A1A1A1A1A1B /* ContentView.swift */,
 				1A1A1A1A1A1A1A33 /* Models */,
 				1A1A1A1A1A1A1A34 /* Views */,
 				1A1A1A1A1A1A1A1D /* Assets.xcassets */,
 				1A1A1A1A1A1A1A1F /* Preview Content */,
 			);
-			path = PomodoroReminderApp;
+			path = LocationReminderApp;
 			sourceTree = "<group>";
 		};
 		1A1A1A1A1A1A1A1F /* Preview Content */ = {
@@ -89,7 +85,6 @@
 			isa = PBXGroup;
 			children = (
 				1A1A1A1A1A1A1A27 /* TaskModel.swift */,
-				1A1A1A1A1A1A1A29 /* TimerManager.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -100,7 +95,6 @@
 				1A1A1A1A1A1A1A2B /* AddTaskView.swift */,
 				1A1A1A1A1A1A1A2D /* TaskDetailView.swift */,
 				1A1A1A1A1A1A1A2F /* MenuView.swift */,
-				541F008C2E0A5C010092A3B9 /* RoomSetupView.swift */,
 				1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */,
 			);
 			path = Views;
@@ -109,9 +103,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1A1A1A1A1A1A1A15 /* PomodoroReminderApp */ = {
+		1A1A1A1A1A1A1A15 /* LocationReminderApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1A1A1A1A1A1A1A24 /* Build configuration list for PBXNativeTarget "PomodoroReminderApp" */;
+			buildConfigurationList = 1A1A1A1A1A1A1A24 /* Build configuration list for PBXNativeTarget "LocationReminderApp" */;
 			buildPhases = (
 				1A1A1A1A1A1A1A12 /* Sources */,
 				1A1A1A1A1A1A1A13 /* Frameworks */,
@@ -121,9 +115,9 @@
 			);
 			dependencies = (
 			);
-			name = PomodoroReminderApp;
+			name = LocationReminderApp;
 			productName = PomodoroReminderApp;
-			productReference = 1A1A1A1A1A1A1A16 /* PomodoroReminderApp.app */;
+			productReference = 1A1A1A1A1A1A1A16 /* LocationReminderApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -141,7 +135,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 1A1A1A1A1A1A1A11 /* Build configuration list for PBXProject "PomodoroReminderApp" */;
+			buildConfigurationList = 1A1A1A1A1A1A1A11 /* Build configuration list for PBXProject "LocationReminderApp" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -154,7 +148,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1A1A1A1A1A1A1A15 /* PomodoroReminderApp */,
+				1A1A1A1A1A1A1A15 /* LocationReminderApp */,
 			);
 		};
 /* End PBXProject section */
@@ -178,13 +172,11 @@
 			files = (
 				1A1A1A1A1A1A1A1C /* ContentView.swift in Sources */,
 				1A1A1A1A1A1A1A28 /* TaskModel.swift in Sources */,
-				1A1A1A1A1A1A1A2A /* TimerManager.swift in Sources */,
 				1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */,
 				1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */,
 				1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */,
-				541F008D2E0A5C010092A3B9 /* RoomSetupView.swift in Sources */,
 				1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */,
-				1A1A1A1A1A1A1A1A /* PomodoroReminderApp.swift in Sources */,
+				1A1A1A1A1A1A1A1A /* LocationReminderApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,11 +310,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"PomodoroReminderApp/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"LocationReminderApp/Preview Content\"";
 				DEVELOPMENT_TEAM = XB2W3692P2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PomodoroReminderApp/Info.plist;
+				INFOPLIST_FILE = LocationReminderApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Territory;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。";
@@ -357,11 +349,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"PomodoroReminderApp/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"LocationReminderApp/Preview Content\"";
 				DEVELOPMENT_TEAM = XB2W3692P2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = PomodoroReminderApp/Info.plist;
+				INFOPLIST_FILE = LocationReminderApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Territory;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。";
@@ -391,7 +383,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1A1A1A1A1A1A1A11 /* Build configuration list for PBXProject "PomodoroReminderApp" */ = {
+		1A1A1A1A1A1A1A11 /* Build configuration list for PBXProject "LocationReminderApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A1A1A1A1A1A1A22 /* Debug */,
@@ -400,7 +392,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1A1A1A1A1A1A1A24 /* Build configuration list for PBXNativeTarget "PomodoroReminderApp" */ = {
+		1A1A1A1A1A1A1A24 /* Build configuration list for PBXNativeTarget "LocationReminderApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A1A1A1A1A1A1A25 /* Debug */,

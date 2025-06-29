@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>リマインダー機能を使用します。</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict/>
 	</array>
 	<key>NSUserNotificationsUsageDescription</key>
-	<string>部屋への入退室時にSecure Bubble状態の通知を送信するために通知機能を使用します。</string>
+	<string>部屋への入退室状態を通知するために使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

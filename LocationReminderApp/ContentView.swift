@@ -9,26 +9,6 @@ struct ContentView: View {
     @State private var showingCompletedTasks = false
     @State private var showingUWBSettings = false
     
-    private var roomStatus: String {
-        guard let savedDistance = UserDefaults.standard.object(forKey: "door_distance") as? Float,
-              let currentDistance = uwbManager.currentDistance else {
-            return "未設定"
-        }
-        
-        return currentDistance <= savedDistance ? "入室中" : "外出中"
-    }
-    
-    private var roomStatusColor: Color {
-        switch roomStatus {
-        case "入室中":
-            return .green
-        case "外出中":
-            return .orange
-        default:
-            return .gray
-        }
-    }
-    
     var todayTasks: [TaskItem] {
         taskManager.tasks.filter { Calendar.current.isDateInToday($0.dueDate) }
     }
@@ -236,26 +216,13 @@ struct ContentView: View {
                                         }
                                     }
                                     
-                                    // 部屋の状態表示
-                                    if roomStatus != "未設定" {
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text("部屋")
-                                                .foregroundColor(roomStatusColor)
-                                                .fontWeight(.medium)
-                                                .font(.caption)
-                                            Text(roomStatus)
-                                                .foregroundColor(roomStatusColor.opacity(0.8))
-                                                .font(.caption2)
-                                        }
-                                    }
-                                    
                                     // Secure Bubble状態表示
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text("Bubble")
+                                        Text("部屋")
                                             .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
                                             .fontWeight(.medium)
                                             .font(.caption)
-                                        Text(uwbManager.isInSecureBubble ? "内部" : "外部")
+                                        Text(uwbManager.isInSecureBubble ? "入室中" : "退室中")
                                             .foregroundColor(uwbManager.isInSecureBubble ? .green.opacity(0.8) : .red.opacity(0.8))
                                             .font(.caption2)
                                     }
@@ -286,6 +253,7 @@ struct ContentView: View {
             } else {
                 // Fallback on earlier versions
             }
+            
         }
         .sheet(item: $selectedTask) { task in
             if let taskIndex = taskManager.tasks.firstIndex(where: { $0.id == task.id }) {

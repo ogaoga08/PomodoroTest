@@ -50,37 +50,31 @@ struct AddTaskView: View {
                         VStack(spacing: 24) {
                             // タスク名
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("タスク")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
                                 
                                 TextField("タスク名を入力", text: $title)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
-                                    .background(Color(.systemGray6))
+                                    .background(Color(.systemGray5))
                                     .cornerRadius(12)
                                     .font(.body)
                             }
                             
                             // メモ
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("メモ")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                
+                              
                                 if #available(iOS 16.0, *) {
                                     TextField("メモを入力（オプション）", text: $memo, axis: .vertical)
                                         .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .background(Color(.systemGray6))
+                                        .padding(.vertical, 8)
+                                        .background(Color(.systemGray5))
                                         .cornerRadius(12)
                                         .font(.body)
                                         .lineLimit(3...6)
                                 } else {
                                     TextField("メモを入力（オプション）", text: $memo)
                                         .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .background(Color(.systemGray6))
+                                        .padding(.vertical, 8)
+                                        .background(Color(.systemGray5))
                                         .cornerRadius(12)
                                         .font(.body)
                                 }
@@ -89,7 +83,7 @@ struct AddTaskView: View {
                             // 期限設定
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
-                                    Text("期限")
+                                    Text("取り組む日時")
                                         .font(.headline)
                                         .foregroundColor(.primary)
                                     

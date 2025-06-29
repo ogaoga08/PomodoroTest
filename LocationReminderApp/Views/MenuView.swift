@@ -25,22 +25,6 @@ struct MenuView: View {
                 }
                 
                 Button(action: {
-                    showingRoomSettings = true
-                }) {
-                    HStack {
-                        Image(systemName: "house")
-                            .foregroundColor(.green)
-                            .frame(width: 24)
-                        Text("部屋設定")
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Button(action: {
                     // 使い方の実装（将来）
                 }) {
                     HStack {
@@ -68,9 +52,6 @@ struct MenuView: View {
         }
         .sheet(isPresented: $showingUWBSettings) {
             UWBSettingsView()
-        }
-        .sheet(isPresented: $showingRoomSettings) {
-            RoomSetupView()
         }
     }
 }
