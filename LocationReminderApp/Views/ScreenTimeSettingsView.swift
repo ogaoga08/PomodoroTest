@@ -49,7 +49,6 @@ struct MockAppInfo: Identifiable, Hashable {
 }
 
 struct ScreenTimeSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var screenTimeManager = ScreenTimeManager()
     @ObservedObject private var uwbManager = UWBManager.shared
     @State private var showingAppSelection = false
@@ -65,8 +64,7 @@ struct ScreenTimeSettingsView: View {
     ]
     
     var body: some View {
-        NavigationView {
-            List {
+        List {
                 // 認証セクション
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
@@ -241,17 +239,9 @@ struct ScreenTimeSettingsView: View {
                 } footer: {
                     Text("実際の実装では、ManagedSettingsを使用してShieldConfigurationでアプリをブロックします。")
                 }
-            }
-            .navigationTitle("Screen Time設定")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") {
-                        dismiss()
-                    }
-                }
-            }
         }
+        .navigationTitle("Screen Time設定")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingAppSelection) {
             AppSelectionView(
                 selectedApps: $screenTimeManager.selectedApps,
@@ -278,8 +268,7 @@ struct AppSelectionView: View {
     let availableApps: [MockAppInfo]
     
     var body: some View {
-        NavigationView {
-            List {
+        List {
                 Section {
                     Text("⚠️ これはプレビュー画面です。実際の実装では、FamilyControls.FamilyActivityPickerを使用してシステムのアプリ選択画面を表示します。")
                         .font(.caption)
@@ -323,14 +312,13 @@ struct AppSelectionView: View {
                 } header: {
                     Text("利用可能なアプリ")
                 }
-            }
-            .navigationTitle("アプリ選択")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") {
-                        dismiss()
-                    }
+        }
+        .navigationTitle("アプリ選択")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("完了") {
+                    dismiss()
                 }
             }
         }

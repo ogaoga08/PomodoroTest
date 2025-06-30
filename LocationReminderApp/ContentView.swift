@@ -4,7 +4,7 @@ import EventKit
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
     @ObservedObject private var uwbManager = UWBManager.shared
-    @State private var showingMenu = false
+
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil
     @State private var showingCompletedTasks = false
@@ -311,15 +311,19 @@ struct ContentView: View {
                                             .foregroundColor(.orange)
                                             .fontWeight(.medium)
                                             .font(.caption)
-                                        if let distance = uwbManager.currentDistance {
-                                            Text(String(format: "%.2fm", distance))
-                                                .foregroundColor(.orange.opacity(0.8))
-                                                .font(.caption2)
-                                        } else {
-                                            Text("-.--m")
-                                                .foregroundColor(.orange.opacity(0.8))
-                                                .font(.caption2)
-                                        }
+                                        
+                                        Text("通信中")
+                                                                            .foregroundColor(.orange.opacity(0.8))
+                                                                                        .font(.caption2)
+//                                        if let distance = uwbManager.currentDistance {
+//                                            Text(String(format: "%.2fm", distance))
+//                                                .foregroundColor(.orange.opacity(0.8))
+//                                                .font(.caption2)
+//                                        } else {
+//                                            Text("-.--m")
+//                                                .foregroundColor(.orange.opacity(0.8))
+//                                                .font(.caption2)
+//                                        }
                                     }
                                     
 //                                    // Secure Bubble状態表示
@@ -344,16 +348,14 @@ struct ContentView: View {
             
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: { showingMenu = true }) {
+                    NavigationLink(destination: MenuView()) {
                         Image(systemName: "ellipsis")
                             .font(.title2)
                     }
                 }
             })
         }
-        .sheet(isPresented: $showingMenu) {
-            MenuView()
-        }
+
         .sheet(isPresented: $showingAddTask) {
             if #available(iOS 16.0, *) {
                 AddTaskView(taskManager: taskManager)

@@ -56,7 +56,7 @@ class NotificationManager: ObservableObject {
             }
         } else {
             content.subtitle = "🎐少し休憩しましょう🎐"
-            content.body = "部屋の外に出ました。深呼吸しましょう。"
+            content.body = "深呼吸しましょう。"
         }
         
         content.sound = .default
@@ -962,13 +962,11 @@ extension UWBManager: NISessionDelegate {
 }
 
 struct UWBSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var uwbManager = UWBManager.shared
     @State private var showingNIPermissionAlert = false
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
+        VStack(spacing: 20) {
                 // ヘッダー
                 VStack(spacing: 16) {
                     Image(systemName: "wave.3.right.circle")
@@ -1121,18 +1119,10 @@ struct UWBSettingsView: View {
                     }
                 }
                 
-                Spacer()
-            }
-            .navigationTitle("UWB設定")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完了") {
-                        dismiss()
-                    }
-                }
-            }
+            Spacer()
         }
+        .navigationTitle("UWB設定")
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     private var niPermissionColor: Color {
