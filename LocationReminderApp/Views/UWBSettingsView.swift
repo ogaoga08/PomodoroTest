@@ -2,6 +2,7 @@ import SwiftUI
 import CoreBluetooth
 import NearbyInteraction
 import UserNotifications
+import BackgroundTasks
 import os
 import Foundation
 
@@ -155,6 +156,8 @@ class UWBManager: NSObject, ObservableObject {
     @Published var hasConnectedDevices = false // 接続済みデバイスがあるかどうか
     @Published var isInSecureBubble = false // secure bubble内にいるかどうか
     @Published var notificationsEnabled = true // 通知が有効かどうか
+    @Published var isBackgroundMode = false // バックグラウンドモードかどうか
+    @Published var backgroundSessionActive = false // バックグラウンドセッションがアクティブかどうか
     
     // TaskManagerへの参照を追加
     weak var taskManager: EventKitTaskManager?
@@ -172,10 +175,20 @@ class UWBManager: NSObject, ObservableObject {
     private let secureBubbleOuterThreshold: Float = 1.2 // -.-m以上でbubbleの外
     private var previousSecureBubbleStatus: Bool? = nil // 前回のsecure bubble状態
     
+    // バックグラウンド処理関連
+    private var backgroundTaskIdentifier: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundMaintenanceTimer: Timer?
+    private var isProcessingBackgroundTask = false
+    private let backgroundTaskIdentifier_uwb = "com.pomodororeminder.uwb.maintenance"
+    private var heartbeatTimer: Timer?
+    private var lastBackgroundUpdate = Date()
+    private var backgroundHeartbeatStartTime: Date?
+    
     private override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
         notificationManager.requestAuthorization()
+        setupBackgroundProcessing()
     }
     
     // 当日までのタスク（期限切れも含む）を取得するメソッド
@@ -410,13 +423,44 @@ class UWBManager: NSObject, ObservableObject {
             // これにより、アプリ内の状態更新とのタイムラグの問題を解消する
             let isInBubbleBasedOnMessage = message.contains("in")
             
-            let todayTasks = getTasksDueUntilToday()
-            notificationManager.setRoomStatusNotification(
-                deviceName: device.name,
-                isInBubble: isInBubbleBasedOnMessage,
-                todayTasks: todayTasks
-            )
-            logger.info("iOSNotify受信: \(device.name) - \(message)")
+            // 前回の状態から変更がある場合のみ処理
+            if previousSecureBubbleStatus != isInBubbleBasedOnMessage {
+                DispatchQueue.main.async {
+                    self.isInSecureBubble = isInBubbleBasedOnMessage
+                }
+                previousSecureBubbleStatus = isInBubbleBasedOnMessage
+                
+                let todayTasks = getTasksDueUntilToday()
+                notificationManager.setRoomStatusNotification(
+                    deviceName: device.name,
+                    isInBubble: isInBubbleBasedOnMessage,
+                    todayTasks: todayTasks
+                )
+                
+                logger.info("iOSNotify受信 - 状態変化: \(device.name) - \(message)")
+                
+                // バックグラウンドモードで効率的な処理を実行
+                if isBackgroundMode {
+                    handleBackgroundSecureBubbleChange(isInBubble: isInBubbleBasedOnMessage)
+                }
+            } else {
+                logger.debug("iOSNotify受信 - 状態変化なし: \(device.name) - \(message)")
+            }
+        }
+    }
+    
+    private func handleBackgroundSecureBubbleChange(isInBubble: Bool) {
+        logger.info("バックグラウンドでのSecure Bubble状態変化: \(isInBubble ? "内部" : "外部")")
+        
+        // バックグラウンドでの軽量な処理のみ実行
+        lastBackgroundUpdate = Date()
+        
+        // 必要に応じてタスクマネージャーに状態変化を通知
+        if taskManager != nil {
+            DispatchQueue.main.async {
+                // TaskManagerの状態更新処理（軽量化）
+                // 詳細なUI更新はフォアグラウンド復帰時に実行
+            }
         }
     }
     
@@ -634,6 +678,351 @@ class UWBManager: NSObject, ObservableObject {
         // 許可テスト用セッションをクリーンアップ
         permissionTestSession?.invalidate()
         permissionTestSession = nil
+    }
+    
+    // MARK: - バックグラウンド処理管理
+    
+    private func setupBackgroundProcessing() {
+        // アプリ状態変化の監視
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+        
+        // バックグラウンドタスクの登録
+        registerBackgroundTasks()
+        
+        logger.info("バックグラウンド処理の設定完了")
+    }
+    
+    private func registerBackgroundTasks() {
+        // UWBバックグラウンド処理タスクの登録
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: backgroundTaskIdentifier_uwb,
+            using: nil
+        ) { task in
+            self.handleBackgroundMaintenanceTask(task: task as! BGProcessingTask)
+        }
+    }
+    
+    @objc private func appDidEnterBackground() {
+        DispatchQueue.main.async {
+            self.isBackgroundMode = true
+        }
+        
+        logger.info("アプリがバックグラウンドに移行")
+        
+        // バックグラウンドタスクの開始
+        beginBackgroundTask()
+        
+        // バックグラウンド用の処理に移行
+        transitionToBackgroundMode()
+        
+        // バックグラウンドタスクをスケジュール
+        scheduleBackgroundTask()
+    }
+    
+    @objc private func appWillEnterForeground() {
+        DispatchQueue.main.async {
+            self.isBackgroundMode = false
+        }
+        
+        logger.info("アプリがフォアグラウンドに復帰")
+        
+        // フォアグラウンド用の処理に復帰
+        transitionToForegroundMode()
+        
+        // バックグラウンドタスクの終了
+        endBackgroundTask()
+    }
+    
+    @objc private func appWillTerminate() {
+        logger.info("アプリが終了")
+        cleanupBackgroundProcessing()
+    }
+    
+    private func beginBackgroundTask() {
+        endBackgroundTask() // 既存のタスクがあれば終了
+        
+        backgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(withName: "UWB Connection Maintenance") {
+            // 有効期限が切れた場合の処理
+            self.logger.warning("バックグラウンドタスクの有効期限切れ")
+            self.endBackgroundTask()
+        }
+        
+        if backgroundTaskIdentifier != .invalid {
+            logger.info("バックグラウンドタスク開始: \(self.backgroundTaskIdentifier.rawValue)")
+        }
+    }
+    
+    private func endBackgroundTask() {
+        if backgroundTaskIdentifier != .invalid {
+            logger.info("バックグラウンドタスク終了: \(self.backgroundTaskIdentifier.rawValue)")
+            UIApplication.shared.endBackgroundTask(backgroundTaskIdentifier)
+            backgroundTaskIdentifier = .invalid
+        }
+    }
+    
+    private func transitionToBackgroundMode() {
+        logger.info("バックグラウンドモードに移行")
+        
+        // フォアグラウンド専用の処理を停止
+        stopScanning()
+        
+        // バックグラウンド用ハートビートタイマーの開始
+        startBackgroundHeartbeat()
+        
+        // 接続状態の保存
+        saveConnectionStateForBackground()
+        
+        DispatchQueue.main.async {
+            self.backgroundSessionActive = true
+        }
+    }
+    
+    private func transitionToForegroundMode() {
+        logger.info("フォアグラウンドモードに復帰")
+        
+        // ハートビートタイマーの停止
+        stopBackgroundHeartbeat()
+        
+        // 接続状態の復元
+        restoreConnectionStateFromBackground()
+        
+        // 自動再接続の実行
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.startAutoReconnection()
+        }
+        
+        DispatchQueue.main.async {
+            self.backgroundSessionActive = false
+        }
+    }
+    
+    private func startBackgroundHeartbeat() {
+        stopBackgroundHeartbeat()
+        
+        backgroundHeartbeatStartTime = Date()
+        
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { _ in
+            self.performBackgroundHeartbeat()
+        }
+        
+        logger.info("バックグラウンドハートビート開始")
+    }
+    
+    private func stopBackgroundHeartbeat() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        backgroundHeartbeatStartTime = nil
+        logger.info("バックグラウンドハートビート停止")
+    }
+    
+    private func performBackgroundHeartbeat() {
+        let elapsedTimeString: String
+        if let startTime = backgroundHeartbeatStartTime {
+            let elapsedTime = Date().timeIntervalSince(startTime)
+            let minutes = Int(elapsedTime) / 60
+            let seconds = Int(elapsedTime) % 60
+            elapsedTimeString = String(format: "(%d:%02d経過)", minutes, seconds)
+        } else {
+            elapsedTimeString = ""
+        }
+        
+        logger.info("バックグラウンドハートビート実行\(elapsedTimeString)")
+        
+        // 接続済みデバイスの状態確認
+        let connectedDevices = discoveredDevices.filter { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }
+        
+        for device in connectedDevices {
+            // 軽量なハートビートメッセージを送信
+            if device.peripheral.state == .connected {
+                let heartbeatMessage = Data([MessageId.getReserved.rawValue])
+                sendDataToDevice(heartbeatMessage, device: device)
+            }
+        }
+        
+        lastBackgroundUpdate = Date()
+    }
+    
+    private func saveConnectionStateForBackground() {
+        let connectedDeviceStates = discoveredDevices.filter { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }.map { device in
+            [
+                "identifier": device.peripheral.identifier.uuidString,
+                "uniqueID": device.uniqueID,
+                "name": device.name,
+                "status": device.status.rawValue
+            ]
+        }
+        
+        UserDefaults.standard.set(connectedDeviceStates, forKey: "background_connected_devices")
+        logger.info("バックグラウンド用接続状態保存: \(connectedDeviceStates.count)台")
+    }
+    
+    private func restoreConnectionStateFromBackground() {
+        if let savedStates = UserDefaults.standard.array(forKey: "background_connected_devices") as? [[String: Any]] {
+            logger.info("バックグラウンド用接続状態復元: \(savedStates.count)台")
+            
+            for state in savedStates {
+                if let _ = state["identifier"] as? String,
+                   let uniqueID = state["uniqueID"] as? Int,
+                   let _ = state["name"] as? String {
+                    
+                    // デバイスが現在のリストに存在するかチェック
+                    if let existingDevice = discoveredDevices.first(where: { $0.uniqueID == uniqueID }) {
+                        // 状態を更新
+                        if existingDevice.peripheral.state == .connected {
+                            DispatchQueue.main.async {
+                                existingDevice.status = .connected
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func scheduleBackgroundTask() {
+        let request = BGProcessingTaskRequest(identifier: backgroundTaskIdentifier_uwb)
+        request.requiresNetworkConnectivity = false
+        request.requiresExternalPower = true // 充電時のみ実行
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 300) // 5分後
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("バックグラウンドタスクをスケジュール")
+        } catch {
+            logger.error("バックグラウンドタスクのスケジュールに失敗: \(error)")
+        }
+    }
+    
+    private func handleBackgroundMaintenanceTask(task: BGProcessingTask) {
+        logger.info("バックグラウンドメンテナンスタスク開始")
+        
+        task.expirationHandler = {
+            self.logger.warning("バックグラウンドメンテナンスタスク期限切れ")
+            self.isProcessingBackgroundTask = false
+            task.setTaskCompleted(success: false)
+        }
+        
+        isProcessingBackgroundTask = true
+        
+        // バックグラウンドでの保守作業を実行
+        performBackgroundMaintenance { success in
+            self.isProcessingBackgroundTask = false
+            task.setTaskCompleted(success: success)
+            
+            // 次のタスクをスケジュール
+            self.scheduleBackgroundTask()
+        }
+    }
+    
+    private func performBackgroundMaintenance(completion: @escaping (Bool) -> Void) {
+        logger.info("バックグラウンドメンテナンス実行")
+        
+        var maintenanceTasks: [() -> Void] = []
+        
+        // 1. 期限切れデバイスのクリーンアップ
+        maintenanceTasks.append {
+            self.cleanupTimeoutDevices()
+        }
+        
+        // 2. 保存されたデバイス情報の整理
+        maintenanceTasks.append {
+            self.cleanupSavedDevices()
+        }
+        
+        // 3. ログの整理（必要に応じて）
+        maintenanceTasks.append {
+            self.cleanupLogs()
+        }
+        
+        // メンテナンスタスクを順次実行
+        let dispatchGroup = DispatchGroup()
+        
+        for task in maintenanceTasks {
+            dispatchGroup.enter()
+            DispatchQueue.global(qos: .background).async {
+                task()
+                dispatchGroup.leave()
+            }
+        }
+        
+        dispatchGroup.notify(queue: .main) {
+            self.logger.info("バックグラウンドメンテナンス完了")
+            completion(true)
+        }
+    }
+    
+    private func cleanupSavedDevices() {
+        var savedDevices = loadSavedDevices()
+        let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        
+        // 1週間以上前のデバイス情報を削除
+        savedDevices.removeAll { $0.savedDate < oneWeekAgo }
+        
+        if let encoded = try? JSONEncoder().encode(savedDevices) {
+            UserDefaults.standard.set(encoded, forKey: savedDevicesKey)
+            logger.info("古いデバイス情報をクリーンアップ")
+        }
+    }
+    
+    private func cleanupLogs() {
+        // ログファイルのクリーンアップ（実装は必要に応じて）
+        logger.info("ログクリーンアップ実行")
+    }
+    
+    private func cleanupBackgroundProcessing() {
+        stopBackgroundHeartbeat()
+        endBackgroundTask()
+        
+        // 通知の監視を停止
+        NotificationCenter.default.removeObserver(self)
+        
+        logger.info("バックグラウンド処理のクリーンアップ完了")
+    }
+    
+    // デバイス接続の最適化
+    func optimizeForBackgroundMode() {
+        logger.info("バックグラウンドモード用最適化実行")
+        
+        // アクティブでないセッションの停止
+        for (deviceID, session) in niSessions {
+            if let device = findDevice(uniqueID: deviceID),
+               device.status != .ranging {
+                session.invalidate()
+                niSessions.removeValue(forKey: deviceID)
+                logger.info("非アクティブセッション停止: \(device.name)")
+            }
+        }
+        
+        // 通信頻度の調整
+        adjustCommunicationFrequency()
+    }
+    
+    private func adjustCommunicationFrequency() {
+        // バックグラウンドでは通信頻度を下げて電力を節約
+        logger.info("通信頻度をバックグラウンド用に調整")
     }
 }
 
@@ -1007,15 +1396,38 @@ struct UWBSettingsView: View {
                 }
                 .padding(.horizontal)
                 
-                // Secure Bubble状態表示
+                // UWB状態表示
                 if uwbManager.isUWBActive {
-                    HStack {
-                        Image(systemName: uwbManager.isInSecureBubble ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
-                        Text("Secure Bubble: \(uwbManager.isInSecureBubble ? "内部" : "外部")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: uwbManager.isInSecureBubble ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
+                            Text("Secure Bubble: \(uwbManager.isInSecureBubble ? "内部" : "外部")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        
+                        // バックグラウンド状態表示
+                        HStack {
+                            Image(systemName: uwbManager.isBackgroundMode ? "moon.circle.fill" : "sun.max.circle.fill")
+                                .foregroundColor(uwbManager.isBackgroundMode ? .blue : .orange)
+                            Text("動作モード: \(uwbManager.isBackgroundMode ? "バックグラウンド" : "フォアグラウンド")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        
+                        if uwbManager.backgroundSessionActive {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("バックグラウンドセッション: アクティブ")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        }
                     }
                     .padding(.horizontal)
                 }

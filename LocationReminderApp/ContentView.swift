@@ -9,6 +9,9 @@ struct ContentView: View {
     @State private var selectedTask: TaskItem? = nil
     @State private var showingCompletedTasks = false
     @State private var showingUWBSettings = false
+    @State private var showingScreenTimeSettings = false
+    @State private var showingOnboarding = false
+    @State private var showingReminderListSelection = false
     
     // チェックボタンの遅延機能用
     @State private var pendingCompletions: [UUID: Timer] = [:]
@@ -33,7 +36,33 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                if taskManager.authorizationStatus == .denied || taskManager.authorizationStatus == .restricted {
+                if taskManager.needsListSelection {
+                    // リスト選択が必要な場合の表示
+                    VStack(spacing: 20) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+                        
+                        Text("リマインダーリストを選択")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("このアプリで使用するリマインダーリストを選択してください。既存のリストから選ぶか、新しいリストを作成できます。")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                        
+                        Button("リストを選択") {
+                            showingReminderListSelection = true
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                    }
+                    .padding()
+                } else if taskManager.authorizationStatus == .denied || taskManager.authorizationStatus == .restricted {
                     // 権限が拒否された場合の表示
                     VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.triangle")
@@ -245,7 +274,7 @@ struct ContentView: View {
                                 taskManager.refreshReminders()
                                 
                                 // isRefreshingの変化を監視して完了を通知
-                                let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                                _ = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
                                     if !taskManager.isRefreshing {
                                         timer.invalidate()
                                         continuation.resume()
@@ -303,18 +332,18 @@ struct ContentView: View {
                     HStack {
                         if uwbManager.isUWBActive {
                             Button(action: { showingUWBSettings = true }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "wave.3.right.circle.fill")
-                                        .foregroundColor(.orange)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("UWB")
-                                            .foregroundColor(.orange)
-                                            .fontWeight(.medium)
-                                            .font(.caption)
-                                        
-                                        Text("通信中")
-                                                                            .foregroundColor(.orange.opacity(0.8))
-                                                                                        .font(.caption2)
+                                                        HStack(spacing: 6) {
+                            Image(systemName: uwbManager.isBackgroundMode ? "wave.3.right.circle" : "wave.3.right.circle.fill")
+                                .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("UWB")
+                                    .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
+                                    .fontWeight(.medium)
+                                    .font(.caption)
+                                
+                                Text(uwbManager.isBackgroundMode ? "バックグラウンド" : "通信中")
+                                    .foregroundColor(uwbManager.isBackgroundMode ? .gray.opacity(0.8) : .orange.opacity(0.8))
+                                    .font(.caption2)
 //                                        if let distance = uwbManager.currentDistance {
 //                                            Text(String(format: "%.2fm", distance))
 //                                                .foregroundColor(.orange.opacity(0.8))
@@ -348,7 +377,33 @@ struct ContentView: View {
             
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink(destination: MenuView()) {
+                    Menu {
+                        // 現在選択されているリストを表示
+                        if !taskManager.needsListSelection {
+                            Section("現在のリスト") {
+                                Text(taskManager.getCurrentReminderListName())
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Button(action: { showingReminderListSelection = true }) {
+                                Label("リマインダーリスト変更", systemImage: "list.bullet.rectangle")
+                            }
+                            
+                            Divider()
+                        }
+                        
+                        Button(action: { showingUWBSettings = true }) {
+                            Label("UWBモジュール設定", systemImage: "wave.3.right")
+                        }
+                        
+                        Button(action: { showingScreenTimeSettings = true }) {
+                            Label("Screen Time設定", systemImage: "hourglass")
+                        }
+                        
+                        Button(action: { showingOnboarding = true }) {
+                            Label("使い方", systemImage: "questionmark.circle")
+                        }
+                    } label: {
                         Image(systemName: "ellipsis")
                             .font(.title2)
                     }
@@ -373,6 +428,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingUWBSettings) {
             UWBSettingsView()
+        }
+        .sheet(isPresented: $showingScreenTimeSettings) {
+            ScreenTimeSettingsView()
+        }
+        .sheet(isPresented: $showingOnboarding) {
+            OnboardingView()
+        }
+        .sheet(isPresented: $showingReminderListSelection) {
+            ReminderListSelectionView(
+                taskManager: taskManager,
+                isPresented: $showingReminderListSelection
+            )
         }
         .onAppear {
             // UWBManagerにTaskManagerの参照を設定

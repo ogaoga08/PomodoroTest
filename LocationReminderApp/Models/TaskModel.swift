@@ -62,9 +62,14 @@ class EventKitTaskManager: ObservableObject {
     @Published var completedTasks: [TaskItem] = []
     @Published var authorizationStatus: EKAuthorizationStatus = .notDetermined
     @Published var isRefreshing: Bool = false // 手動更新中の状態
+    @Published var needsListSelection: Bool = false // リスト選択が必要かどうか
     
     private let eventStore = EKEventStore()
     private var reminderCalendar: EKCalendar?
+    
+    // UserDefaultsのキー
+    private let selectedListIdentifierKey = "SelectedReminderListIdentifier"
+    private let hasSelectedListKey = "HasSelectedReminderList"
     
     init() {
         checkAuthorizationStatus()
@@ -74,6 +79,22 @@ class EventKitTaskManager: ObservableObject {
     deinit {
         // 通知の監視を停止
         NotificationCenter.default.removeObserver(self)
+    }
+    
+    // 認証状態をチェックするヘルパー関数
+    private func isAuthorized() -> Bool {
+        switch authorizationStatus {
+        case .authorized:
+            return true
+        case .fullAccess, .writeOnly:
+            if #available(iOS 17.0, *) {
+                return true
+            } else {
+                return false
+            }
+        default:
+            return false
+        }
     }
     
     // EventKitの変更通知を設定
@@ -118,22 +139,23 @@ class EventKitTaskManager: ObservableObject {
             requestAccess()
         case .denied, .restricted:
             print("リマインダーアクセスが拒否されています")
-        @unknown default:
+        case .fullAccess:
             if #available(iOS 17.0, *) {
-                switch authorizationStatus {
-                case .fullAccess:
-                    setupCalendar()
-                    loadReminders()
-                case .writeOnly:
-                    print("書き込み専用アクセス")
-                    setupCalendar()
-                    loadReminders()
-                default:
-                    print("不明な認証状態")
-                }
+                setupCalendar()
+                loadReminders()
             } else {
                 print("不明な認証状態")
             }
+        case .writeOnly:
+            if #available(iOS 17.0, *) {
+                print("書き込み専用アクセス")
+                setupCalendar()
+                loadReminders()
+            } else {
+                print("不明な認証状態")
+            }
+        @unknown default:
+            print("不明な認証状態")
         }
     }
     
@@ -153,30 +175,56 @@ class EventKitTaskManager: ObservableObject {
     }
     
     private func setupCalendar() {
-        // アプリ専用のリマインダーリストを作成または取得
-        let calendars = eventStore.calendars(for: .reminder)
+        // 保存されたリスト識別子を確認
+        let hasSelectedList = UserDefaults.standard.bool(forKey: hasSelectedListKey)
         
-        if let existingCalendar = calendars.first(where: { $0.title == "LocationReminder" }) {
-            reminderCalendar = existingCalendar
+        if hasSelectedList {
+            // 既に選択されたリストがある場合、それを復元
+            if let savedIdentifier = UserDefaults.standard.string(forKey: selectedListIdentifierKey) {
+                let calendars = eventStore.calendars(for: .reminder)
+                if let savedCalendar = calendars.first(where: { $0.calendarIdentifier == savedIdentifier }) {
+                    reminderCalendar = savedCalendar
+                    loadReminders()
+                    return
+                }
+            }
+        }
+        
+        // 初回起動または保存されたリストが見つからない場合
+        let availableLists = getAvailableReminderLists()
+        
+        if availableLists.isEmpty {
+            // リストが存在しない場合、デフォルトリストを作成
+            createDefaultReminderList()
+        } else if availableLists.count == 1 {
+            // リストが1つしかない場合、それを自動選択
+            setSelectedReminderList(availableLists[0])
         } else {
-            // 新しいリマインダーリストを作成
-            let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
-            newCalendar.title = "LocationReminder"
-            newCalendar.source = eventStore.defaultCalendarForNewReminders()?.source
-            
-            do {
-                try eventStore.saveCalendar(newCalendar, commit: true)
-                reminderCalendar = newCalendar
-            } catch {
-                print("リマインダーリストの作成に失敗しました: \(error)")
-                // フォールバックとしてデフォルトのリマインダーリストを使用
-                reminderCalendar = eventStore.defaultCalendarForNewReminders()
+            // 複数のリストがある場合、ユーザーに選択を促す
+            needsListSelection = true
+        }
+    }
+    
+    private func createDefaultReminderList() {
+        // アプリ専用のリマインダーリストを作成
+        let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
+        newCalendar.title = "LocationReminder"
+        newCalendar.source = eventStore.defaultCalendarForNewReminders()?.source
+        
+        do {
+            try eventStore.saveCalendar(newCalendar, commit: true)
+            setSelectedReminderList(newCalendar)
+        } catch {
+            print("リマインダーリストの作成に失敗しました: \(error)")
+            // フォールバックとしてデフォルトのリマインダーリストを使用
+            if let defaultCalendar = eventStore.defaultCalendarForNewReminders() {
+                setSelectedReminderList(defaultCalendar)
             }
         }
     }
     
     func loadReminders() {
-        guard authorizationStatus == .authorized else { return }
+        guard isAuthorized() else { return }
         
         let predicate = eventStore.predicateForReminders(in: [reminderCalendar].compactMap { $0 })
         
@@ -194,7 +242,7 @@ class EventKitTaskManager: ObservableObject {
     }
     
     func addTask(_ task: TaskItem) {
-        guard authorizationStatus == .authorized,
+        guard isAuthorized(),
               let calendar = reminderCalendar else { return }
         
         let reminder = EKReminder(eventStore: eventStore)
@@ -233,7 +281,7 @@ class EventKitTaskManager: ObservableObject {
     }
     
     func updateTask(_ task: TaskItem) {
-        guard authorizationStatus == .authorized,
+        guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
               let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
         
@@ -274,7 +322,7 @@ class EventKitTaskManager: ObservableObject {
     }
     
     func deleteTask(_ task: TaskItem) {
-        guard authorizationStatus == .authorized,
+        guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
               let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
         
@@ -287,7 +335,7 @@ class EventKitTaskManager: ObservableObject {
     }
     
     func completeTask(_ task: TaskItem) {
-        guard authorizationStatus == .authorized,
+        guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
               let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
         
@@ -303,7 +351,7 @@ class EventKitTaskManager: ObservableObject {
     }
     
     func uncompleteTask(_ task: TaskItem) {
-        guard authorizationStatus == .authorized,
+        guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
               let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
         
@@ -316,6 +364,52 @@ class EventKitTaskManager: ObservableObject {
         } catch {
             print("リマインダーの未完了処理に失敗しました: \(error)")
         }
+    }
+    
+    // MARK: - リスト選択関連のメソッド
+    
+    /// 利用可能なリマインダーリストを取得
+    func getAvailableReminderLists() -> [EKCalendar] {
+        guard isAuthorized() else {
+            return []
+        }
+        
+        return eventStore.calendars(for: .reminder)
+    }
+    
+    /// 選択されたリマインダーリストを設定
+    func setSelectedReminderList(_ calendar: EKCalendar) {
+        reminderCalendar = calendar
+        
+        // UserDefaultsに保存
+        UserDefaults.standard.set(calendar.calendarIdentifier, forKey: selectedListIdentifierKey)
+        UserDefaults.standard.set(true, forKey: hasSelectedListKey)
+        
+        // リスト選択が完了したことを通知
+        needsListSelection = false
+        
+        // タスクを再読み込み
+        loadReminders()
+    }
+    
+    /// 現在選択されているリマインダーリストを取得
+    func getCurrentReminderList() -> EKCalendar? {
+        return reminderCalendar
+    }
+    
+    /// 現在選択されているリスト名を取得
+    func getCurrentReminderListName() -> String {
+        return reminderCalendar?.title ?? "未選択"
+    }
+    
+    /// リスト選択をリセット（設定変更用）
+    func resetListSelection() {
+        UserDefaults.standard.removeObject(forKey: selectedListIdentifierKey)
+        UserDefaults.standard.set(false, forKey: hasSelectedListKey)
+        reminderCalendar = nil
+        needsListSelection = true
+        tasks = []
+        completedTasks = []
     }
 }
 

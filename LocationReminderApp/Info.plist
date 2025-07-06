@@ -2,12 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>リマインダーアプリと連携します。</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.pomodororeminder.uwb.maintenance</string>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict/>
 	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>リマインダーアプリと連携します。</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>部屋への入退室状態を通知するために使用します。</string>
 	<key>UIBackgroundModes</key>
