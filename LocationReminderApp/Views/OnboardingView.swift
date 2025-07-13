@@ -5,9 +5,8 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     
     private let pages = [
-        "本アプリは先延ばし防止のための位置情報活用リマインダーアプリです。",
-        "先延ばしは、身体的・精神的負担に影響を与えるが、ついついやってしまう行為だとされています。",
-        "本アプリはそんな先延ばし癖を解消するために作られました。",
+        "本アプリは先延ばし防止に特化したリマインダーアプリです。",
+        "先延ばし行為は身体的・精神的負担に影響を与えることがわかっています。",
         "先延ばしを防ぐ最も有効的な手段は、\"すぐやる\"ことです。",
         "自室に入ったら\"すぐやる\"。この行動を習慣化することで、あなたの人生を豊かにすることでしょう。",
         "さあ、始めましょう"
@@ -16,7 +15,6 @@ struct OnboardingView: View {
     private let icons = [
         "location.circle.fill",
         "brain.head.profile",
-        "star.circle.fill",
         "bolt.circle.fill",
         "house.circle.fill",
         "play.circle.fill"
@@ -25,7 +23,6 @@ struct OnboardingView: View {
     private let colors: [Color] = [
         .blue,
         .orange,
-        .purple,
         .green,
         .red,
         .pink

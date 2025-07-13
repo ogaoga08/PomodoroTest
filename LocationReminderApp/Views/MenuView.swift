@@ -28,7 +28,7 @@ struct MenuView: View {
                     Image(systemName: "questionmark.circle")
                         .foregroundColor(.orange)
                         .frame(width: 24)
-                    Text("使い方")
+                    Text("本アプリとは")
                         .foregroundColor(.primary)
                 }
             }

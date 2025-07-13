@@ -3,7 +3,7 @@ import EventKit
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
-    @ObservedObject private var uwbManager = UWBManager.shared
+    @StateObject private var uwbManager = UWBManager.shared
 
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil
@@ -12,29 +12,30 @@ struct ContentView: View {
     @State private var showingScreenTimeSettings = false
     @State private var showingOnboarding = false
     @State private var showingReminderListSelection = false
+    @State private var showingStatistics = false
     
     // チェックボタンの遅延機能用
     @State private var pendingCompletions: [UUID: Timer] = [:]
     @State private var temporaryCompletedTasks: Set<UUID> = []
     
     var todayTasks: [TaskItem] {
-        taskManager.tasks.filter { 
+        taskManager.getParentTasks().filter { 
             Calendar.current.isDateInToday($0.dueDate) || $0.dueDate < Calendar.current.startOfDay(for: Date())
         }
     }
     
     var futureTasks: [TaskItem] {
-        taskManager.tasks.filter { !Calendar.current.isDateInToday($0.dueDate) && $0.dueDate > Date() }
+        taskManager.getParentTasks().filter { !Calendar.current.isDateInToday($0.dueDate) && $0.dueDate > Date() }
     }
     
     var completionRate: Double {
-        let completedTasks = taskManager.completedTasks.count
-        let totalTasks = completedTasks + taskManager.tasks.count
+        let completedTasks = taskManager.getCompletedParentTasks().count
+        let totalTasks = completedTasks + taskManager.getParentTasks().count
         return totalTasks > 0 ? Double(completedTasks) / Double(totalTasks) : 0.0
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 if taskManager.needsListSelection {
                     // リスト選択が必要な場合の表示
@@ -126,12 +127,19 @@ struct ContentView: View {
                                 )
                                 .cornerRadius(16)
                                 
-                                // 期限遂行率（青ベース）
+                                // 期限遂行率（青ベース） - タップで統計画面へ
                                 VStack(spacing: 8) {
-                                    Text("期限遂行率")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.white)
+                                    VStack(spacing: 4) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "chart.bar.fill")
+                                                .font(.caption)
+                                                .foregroundColor(.white.opacity(0.8))
+                                            Text("期限遂行率")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.white)
+                                        }
+                                    }
                                     Text("\(Int(completionRate * 100))%")
                                         .font(.largeTitle)
                                         .fontWeight(.bold)
@@ -153,6 +161,29 @@ struct ContentView: View {
                         .padding(.vertical, 20)
                         .background(Color(.systemGroupedBackground))
                         
+                        // 統計画面へのボタンを中央揃えで追加
+                        HStack {
+                            Spacer()
+                            Button(action: { showingStatistics = true }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "chart.bar.fill")
+                                        .font(.caption)
+                                    Text("その他の統計")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(12)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+                        .background(Color(.systemGroupedBackground))
+                        
                         // タスクリスト
                         List {
                             if !todayTasks.isEmpty {
@@ -162,7 +193,8 @@ struct ContentView: View {
                                             task: task,
                                             isTemporarilyCompleted: temporaryCompletedTasks.contains(task.id),
                                             onTap: { selectedTask = task },
-                                            onComplete: { handleTaskCompletion(task) }
+                                            onComplete: { handleTaskCompletion(task) },
+                                            taskManager: taskManager
                                         )
                                         .swipeActions(edge: .trailing) {
                                             Button("削除", role: .destructive) {
@@ -192,7 +224,8 @@ struct ContentView: View {
                                             task: task,
                                             isTemporarilyCompleted: temporaryCompletedTasks.contains(task.id),
                                             onTap: { selectedTask = task },
-                                            onComplete: { handleTaskCompletion(task) }
+                                            onComplete: { handleTaskCompletion(task) },
+                                            taskManager: taskManager
                                         )
                                         .swipeActions(edge: .trailing) {
                                             Button("削除", role: .destructive) {
@@ -216,12 +249,12 @@ struct ContentView: View {
                             }
                             
                             // 完了タスクアコーディオン
-                            if !taskManager.completedTasks.isEmpty {
+                            if !taskManager.getCompletedParentTasks().isEmpty {
                                 Section {
                                     DisclosureGroup(
                                         isExpanded: $showingCompletedTasks,
                                         content: {
-                                            ForEach(taskManager.completedTasks.reversed()) { task in
+                                            ForEach(taskManager.getCompletedParentTasks().reversed()) { task in
                                                 CompletedTaskRowView(task: task) {
                                                     selectedTask = task
                                                 }
@@ -239,7 +272,7 @@ struct ContentView: View {
                                                     .font(.headline)
                                                     .fontWeight(.semibold)
                                                 Spacer()
-                                                Text("\(taskManager.completedTasks.count)件")
+                                                Text("\(taskManager.getCompletedParentTasks().count)件")
                                                     .font(.caption)
                                                     .foregroundColor(.secondary)
                                             }
@@ -248,7 +281,7 @@ struct ContentView: View {
                                 }
                             }
                             
-                            if taskManager.tasks.isEmpty && isAuthorizedForReminders(taskManager.authorizationStatus) {
+                            if taskManager.getParentTasks().isEmpty && isAuthorizedForReminders(taskManager.authorizationStatus) {
                                 Section {
                                     VStack {
                                         Image(systemName: "checkmark.circle")
@@ -392,6 +425,12 @@ struct ContentView: View {
                             Divider()
                         }
                         
+                        Button(action: { showingStatistics = true }) {
+                            Label("統計・分析", systemImage: "chart.bar.fill")
+                        }
+                        
+                        Divider()
+                        
                         Button(action: { showingUWBSettings = true }) {
                             Label("UWBモジュール設定", systemImage: "wave.3.right")
                         }
@@ -420,9 +459,9 @@ struct ContentView: View {
             
         }
         .sheet(item: $selectedTask) { task in
-            if let taskIndex = taskManager.tasks.firstIndex(where: { $0.id == task.id }) {
+            if let taskIndex = taskManager.getParentTasks().firstIndex(where: { $0.id == task.id }) {
                 TaskDetailView(task: $taskManager.tasks[taskIndex], taskManager: taskManager)
-            } else if let completedTaskIndex = taskManager.completedTasks.firstIndex(where: { $0.id == task.id }) {
+            } else if let completedTaskIndex = taskManager.getCompletedParentTasks().firstIndex(where: { $0.id == task.id }) {
                 TaskDetailView(task: $taskManager.completedTasks[completedTaskIndex], taskManager: taskManager)
             }
         }
@@ -440,6 +479,9 @@ struct ContentView: View {
                 taskManager: taskManager,
                 isPresented: $showingReminderListSelection
             )
+        }
+        .sheet(isPresented: $showingStatistics) {
+            StatisticsView(taskManager: taskManager)
         }
         .onAppear {
             // UWBManagerにTaskManagerの参照を設定
@@ -486,6 +528,7 @@ struct TaskRowView: View {
     let isTemporarilyCompleted: Bool
     let onTap: () -> Void
     let onComplete: () -> Void
+    @ObservedObject var taskManager: TaskManager
     
     private var isShowingAsCompleted: Bool {
         task.isCompleted || isTemporarilyCompleted
@@ -507,13 +550,47 @@ struct TaskRowView: View {
             
             // 中央：タスク情報
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                    .strikethrough(isShowingAsCompleted)
+                HStack(spacing: 8) {
+                    Text(task.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .strikethrough(isShowingAsCompleted)
+                    
+                    if task.priority != .none {
+                        HStack(spacing: 2) {
+                            Image(systemName: task.priority.symbolName)
+                                .foregroundColor(task.priority.color)
+                                .font(.caption)
+                            Text(task.priority.displayName)
+                                .foregroundColor(task.priority.color)
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(task.priority.color.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    if task.recurrenceType != .none {
+                        HStack(spacing: 2) {
+                            Image(systemName: task.recurrenceType.symbolName)
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            Text(task.recurrenceType.displayName)
+                                .foregroundColor(.blue)
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
                 
                 if !task.memo.isEmpty {
-                    Text(task.memo)
+                    Text(task.cleanMemo)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)

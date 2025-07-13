@@ -6,12 +6,6 @@
 	<array>
 		<string>com.pomodororeminder.uwb.maintenance</string>
 	</array>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict/>
-	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>リマインダーアプリと連携します。</string>
 	<key>NSUserNotificationsUsageDescription</key>
@@ -22,6 +16,7 @@
 		<string>nearby-interaction</string>
 		<string>processing</string>
 		<string>fetch</string>
+		<string>external-accessory</string>
 	</array>
 </dict>
 </plist>

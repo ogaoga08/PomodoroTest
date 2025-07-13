@@ -8,6 +8,8 @@ struct AddTaskView: View {
     @State private var memo = ""
     @State private var dueDate = Date()
     @State private var hasTime = false
+    @State private var priority: TaskPriority = .none
+    @State private var recurrenceType: RecurrenceType = .none
     
     var body: some View {
         if #available(iOS 16.0, *) {
@@ -29,7 +31,9 @@ struct AddTaskView: View {
                                         title: title,
                                         memo: memo,
                                         dueDate: dueDate,
-                                        hasTime: hasTime
+                                        hasTime: hasTime,
+                                        priority: priority,
+                                        recurrenceType: recurrenceType
                                     )
                                     taskManager.addTask(newTask)
                                     dismiss()
@@ -50,7 +54,6 @@ struct AddTaskView: View {
                         VStack(spacing: 24) {
                             // タスク名
                             VStack(alignment: .leading, spacing: 12) {
-                                
                                 TextField("タスク名を入力", text: $title)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
@@ -61,7 +64,6 @@ struct AddTaskView: View {
                             
                             // メモ
                             VStack(alignment: .leading, spacing: 12) {
-                              
                                 if #available(iOS 16.0, *) {
                                     TextField("メモを入力（オプション）", text: $memo, axis: .vertical)
                                         .padding(.horizontal, 16)
@@ -78,6 +80,45 @@ struct AddTaskView: View {
                                         .cornerRadius(12)
                                         .font(.body)
                                 }
+                            }
+                            
+                            // 優先度設定
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("優先度")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(TaskPriority.allCases) { priorityOption in
+                                            Button(action: {
+                                                priority = priorityOption
+                                            }) {
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: priorityOption.symbolName)
+                                                        .foregroundColor(priority == priorityOption ? .white : priorityOption.color)
+                                                        .font(.caption)
+                                                    
+                                                    Text(priorityOption.displayName)
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(priority == priorityOption ? .white : .primary)
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(
+                                                    priority == priorityOption
+                                                        ? priorityOption.color
+                                                        : Color(.systemGray5)
+                                                )
+                                                .cornerRadius(16)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                }
+                                .padding(.horizontal, -20)
                             }
                             
                             // 期限設定
@@ -111,7 +152,47 @@ struct AddTaskView: View {
                                     DatePicker("期限日", selection: $dueDate, displayedComponents: [.date])
                                         .datePickerStyle(.compact)
                                         .labelsHidden()
+                                        .environment(\.locale, Locale(identifier: "ja_JP"))
                                 }
+                            }
+                            
+                            // 繰り返し設定
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("繰り返し")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(RecurrenceType.allCases) { recurrenceOption in
+                                            Button(action: {
+                                                recurrenceType = recurrenceOption
+                                            }) {
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: recurrenceOption.symbolName)
+                                                        .foregroundColor(recurrenceType == recurrenceOption ? .white : .blue)
+                                                        .font(.caption)
+                                                    
+                                                    Text(recurrenceOption.displayName)
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(recurrenceType == recurrenceOption ? .white : .primary)
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .background(
+                                                    recurrenceType == recurrenceOption
+                                                        ? Color.blue
+                                                        : Color(.systemGray5)
+                                                )
+                                                .cornerRadius(16)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                    }
+                                    .padding(.horizontal, 20)
+                                }
+                                .padding(.horizontal, -20)
                             }
                             
                             Spacer(minLength: 100)
@@ -122,6 +203,10 @@ struct AddTaskView: View {
                 }
                 .navigationBarHidden(true)
                 .ignoresSafeArea(.keyboard, edges: .bottom)
+                .onTapGesture {
+                    // キーボードを閉じる
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

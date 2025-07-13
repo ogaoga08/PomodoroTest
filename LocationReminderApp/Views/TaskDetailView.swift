@@ -11,6 +11,8 @@ struct TaskDetailView: View {
     @State private var editedMemo: String = ""
     @State private var editedDueDate: Date = Date()
     @State private var editedHasTime: Bool = false
+    @State private var editedPriority: TaskPriority = .none
+    @State private var editedRecurrenceType: RecurrenceType = .none
     
     var body: some View {
         NavigationView {
@@ -26,6 +28,43 @@ struct TaskDetailView: View {
                                 .padding(.vertical, 12)
                                 .background(Color(.systemGray6))
                                 .cornerRadius(12)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("優先度")
+                                .font(.headline)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(TaskPriority.allCases) { priorityOption in
+                                        Button(action: {
+                                            editedPriority = priorityOption
+                                        }) {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: priorityOption.symbolName)
+                                                    .foregroundColor(editedPriority == priorityOption ? .white : priorityOption.color)
+                                                    .font(.caption)
+                                                
+                                                Text(priorityOption.displayName)
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(editedPriority == priorityOption ? .white : .primary)
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                editedPriority == priorityOption
+                                                    ? priorityOption.color
+                                                    : Color(.systemGray6)
+                                            )
+                                            .cornerRadius(16)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                            .padding(.horizontal, -16)
                         }
                         
                         VStack(alignment: .leading, spacing: 8) {
@@ -71,7 +110,45 @@ struct TaskDetailView: View {
                                 DatePicker("期限日", selection: $editedDueDate, displayedComponents: [.date])
                                     .datePickerStyle(.compact)
                                     .labelsHidden()
+                                    .environment(\.locale, Locale(identifier: "ja_JP"))
                             }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("繰り返し")
+                                .font(.headline)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(RecurrenceType.allCases) { recurrenceOption in
+                                        Button(action: {
+                                            editedRecurrenceType = recurrenceOption
+                                        }) {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: recurrenceOption.symbolName)
+                                                    .foregroundColor(editedRecurrenceType == recurrenceOption ? .white : .blue)
+                                                    .font(.caption)
+                                                
+                                                Text(recurrenceOption.displayName)
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(editedRecurrenceType == recurrenceOption ? .white : .primary)
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                editedRecurrenceType == recurrenceOption
+                                                    ? Color.blue
+                                                    : Color(.systemGray6)
+                                            )
+                                            .cornerRadius(16)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                            .padding(.horizontal, -16)
                         }
                     }
                     .padding(.horizontal)
@@ -94,13 +171,18 @@ struct TaskDetailView: View {
                     }
                 }
             })
-
+            .onTapGesture {
+                // キーボードを閉じる
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
         }
         .onAppear {
             editedTitle = task.title
             editedMemo = task.memo
             editedDueDate = task.dueDate
             editedHasTime = task.hasTime
+            editedPriority = task.priority
+            editedRecurrenceType = task.recurrenceType
         }
     }
     
@@ -110,6 +192,8 @@ struct TaskDetailView: View {
         updatedTask.memo = editedMemo
         updatedTask.dueDate = editedDueDate
         updatedTask.hasTime = editedHasTime
+        updatedTask.priority = editedPriority
+        updatedTask.recurrenceType = editedRecurrenceType
         
         taskManager.updateTask(updatedTask)
     }
