@@ -6,6 +6,18 @@
 	<array>
 		<string>com.pomodororeminder.uwb.maintenance</string>
 	</array>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionPointIdentifier</key>
+			<string>com.apple.ManagedSettingsUI.ShieldConfiguration</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.ManagedSettingsUI.ShieldConfiguration</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>LocationReminderApp.ShieldConfigurationExtension</string>
+	</dict>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>リマインダーアプリと連携します。</string>
 	<key>NSUserNotificationsUsageDescription</key>

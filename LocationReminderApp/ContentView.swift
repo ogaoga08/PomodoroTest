@@ -3,7 +3,7 @@ import EventKit
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
-    @StateObject private var uwbManager = UWBManager.shared
+    @StateObject private var uwbManager: UWBManager = UWBManager.shared
 
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil

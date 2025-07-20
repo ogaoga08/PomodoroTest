@@ -17,10 +17,10 @@
 		1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A2F /* MenuView.swift */; };
 		1A1A1A1A1A1A1A32 /* UWBSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */; };
 		543113802E119696000EFA3A /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5431137F2E119696000EFA3A /* OnboardingView.swift */; };
-		543113822E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md in Resources */ = {isa = PBXBuildFile; fileRef = 543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */; };
 		543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */; };
 		543113862E1AC78E000EFA3A /* ReminderListSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */; };
 		543113882E1AD919000EFA3A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113872E1AD919000EFA3A /* StatisticsView.swift */; };
+		5493DAC12E2A234000881BC9 /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5493DAC02E2A234000881BC9 /* FamilyControls.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,11 +36,11 @@
 		1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UWBSettingsView.swift; sourceTree = "<group>"; };
 		541F00892E0A37F70092A3B9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5431137F2E119696000EFA3A /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
-		543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SCREEN_TIME_IMPLEMENTATION.md; sourceTree = "<group>"; };
 		543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeSettingsView.swift; sourceTree = "<group>"; };
 		543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderListSelectionView.swift; sourceTree = "<group>"; };
 		543113872E1AD919000EFA3A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
 		546E25FD2E1CDA3700E2CD04 /* LocationReminderApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocationReminderApp.entitlements; sourceTree = "<group>"; };
+		5493DAC02E2A234000881BC9 /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +48,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5493DAC12E2A234000881BC9 /* FamilyControls.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -57,8 +58,8 @@
 		1A1A1A1A1A1A1A0D = {
 			isa = PBXGroup;
 			children = (
-				543113812E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md */,
 				1A1A1A1A1A1A1A18 /* LocationReminderApp */,
+				5493DABF2E2A234000881BC9 /* Frameworks */,
 				1A1A1A1A1A1A1A17 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -115,6 +116,14 @@
 				1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		5493DABF2E2A234000881BC9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				5493DAC02E2A234000881BC9 /* FamilyControls.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -175,7 +184,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				543113822E119F4B000EFA3A /* SCREEN_TIME_IMPLEMENTATION.md in Resources */,
 				1A1A1A1A1A1A1A21 /* Preview Assets.xcassets in Resources */,
 				1A1A1A1A1A1A1A1E /* Assets.xcassets in Resources */,
 			);

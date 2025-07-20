@@ -1,150 +1,370 @@
 import SwiftUI
+import FamilyControls
+import ManagedSettings
+import DeviceActivity
+import UIKit
 
-// Screen Time管理クラス（仮実装）
-class ScreenTimeManager: ObservableObject {
-    @Published var isAuthorized = false
-    @Published var isRestrictionEnabled = false
-    @Published var selectedApps: [MockAppInfo] = []
-    @Published var isUWBLinked = true
-    @Published var authorizationStatus = "未認証"
+// FamilyActivitySelectionを永続化するためのヘルパー
+class FamilyActivitySelectionStore: ObservableObject {
+    @Published var selection = FamilyActivitySelection()
     
-    func requestAuthorization() {
-        // 実際の実装では FamilyControls.AuthorizationCenter.shared.requestAuthorization() を使用
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            // 仮の認証成功
-            self.isAuthorized = true
-            self.authorizationStatus = "認証済み"
+    private let userDefaults = UserDefaults.standard
+    private let applicationsKey = "FamilyActivitySelectionApplications"
+    private let categoriesKey = "FamilyActivitySelectionCategories"
+    private let webDomainsKey = "FamilyActivitySelectionWebDomains"
+
+    init() {
+        loadSelection()
+    }
+    
+    func saveSelection() {
+        do {
+            let applicationsData = try? JSONEncoder().encode(selection.applicationTokens)
+            let categoriesData = try? JSONEncoder().encode(selection.categoryTokens)
+            let webDomainsData = try? JSONEncoder().encode(selection.webDomainTokens)
+            
+            userDefaults.set(applicationsData, forKey: applicationsKey)
+            userDefaults.set(categoriesData, forKey: categoriesKey)
+            userDefaults.set(webDomainsData, forKey: webDomainsKey)
+
+            print("FamilyActivitySelection保存完了")
+            print("- アプリ数: \(selection.applicationTokens.count)")
+            print("- カテゴリ数: \(selection.categoryTokens.count)")
+            print("- Webドメイン数: \(selection.webDomainTokens.count)")
         }
     }
     
-    func toggleRestriction() {
-        isRestrictionEnabled.toggle()
-        // 実際の実装では ManagedSettings を使用してアプリ制限を設定
+    func loadSelection() {
+        var loadedSelection = FamilyActivitySelection()
+        
+        do {
+            if let applicationsData = userDefaults.data(forKey: applicationsKey) {
+                loadedSelection.applicationTokens = try JSONDecoder().decode(Set<ApplicationToken>.self, from: applicationsData)
+            }
+            if let categoriesData = userDefaults.data(forKey: categoriesKey) {
+                loadedSelection.categoryTokens = try JSONDecoder().decode(Set<ActivityCategoryToken>.self, from: categoriesData)
+            }
+            if let webDomainsData = userDefaults.data(forKey: webDomainsKey) {
+                loadedSelection.webDomainTokens = try JSONDecoder().decode(Set<WebDomainToken>.self, from: webDomainsData)
+            }
+            
+            self.selection = loadedSelection
+            print("FamilyActivitySelection読み込み完了")
+            print("- アプリ数: \(selection.applicationTokens.count)")
+            print("- カテゴリ数: \(selection.categoryTokens.count)")
+            print("- Webドメイン数: \(selection.webDomainTokens.count)")
+        } catch {
+            print("FamilyActivitySelection読み込みエラー: \(error)")
+        }
     }
     
-    func enableRestrictionForSecureBubble() {
-        guard isAuthorized && isUWBLinked else { return }
-        isRestrictionEnabled = true
-        // 実際の実装:
-        // let store = ManagedSettingsStore()
-        // store.application.blockedApplications = selectedApps
-        // store.shield.applications = selectedApps
-    }
-    
-    func disableRestrictionForSecureBubble() {
-        guard isAuthorized && isUWBLinked else { return }
-        isRestrictionEnabled = false
-        // 実際の実装:
-        // let store = ManagedSettingsStore()
-        // store.clearAllSettings()
+    func clearSelection() {
+        selection = FamilyActivitySelection()
+        userDefaults.removeObject(forKey: applicationsKey)
+        userDefaults.removeObject(forKey: categoriesKey)
+        userDefaults.removeObject(forKey: webDomainsKey)
+        print("FamilyActivitySelectionをクリアしました")
     }
 }
 
-// モックアプリ情報
-struct MockAppInfo: Identifiable, Hashable {
-    let id = UUID()
-    let name: String
-    let bundleIdentifier: String
-    let iconName: String
+// Screen Time管理クラス（実際の実装）
+class ScreenTimeManager: ObservableObject {
+    @Published var isAuthorized = false
+    @Published var isRestrictionEnabled = false
+    @Published var isUWBLinked = true
+    @Published var authorizationStatus = "未認証"
+    
+    private let authorizationCenter = AuthorizationCenter.shared
+    private let store = ManagedSettingsStore()
+    
+    // FamilyActivitySelectionStoreを使用
+    @Published var activitySelectionStore = FamilyActivitySelectionStore()
+    
+    init() {
+        checkAuthorizationStatus()
+        setupShieldActionNotifications()
+        logDebugInfo()
+        
+        // 初回起動時に自動的に認証ダイアログを表示
+        if authorizationCenter.authorizationStatus == .notDetermined {
+            requestAuthorization()
+        }
+    }
+    
+    // デバッグ情報をログに出力
+    private func logDebugInfo() {
+        print("=== Screen Time Debug Info ===")
+        print("認証状態: \(authorizationStatus)")
+        print("制限状態: \(isRestrictionEnabled ? "有効" : "無効")")
+        print("UWB連動: \(isUWBLinked ? "有効" : "無効")")
+        print("選択されたアプリ数: \(activitySelectionStore.selection.applicationTokens.count)")
+        print("選択されたカテゴリ数: \(activitySelectionStore.selection.categoryTokens.count)")
+        print("選択されたWebドメイン数: \(activitySelectionStore.selection.webDomainTokens.count)")
+        print("================================")
+    }
+    
+    // 認証状態を確認
+    private func checkAuthorizationStatus() {
+        switch authorizationCenter.authorizationStatus {
+        case .approved:
+            isAuthorized = true
+            authorizationStatus = "認証済み"
+        case .denied:
+            isAuthorized = false
+            authorizationStatus = "認証拒否"
+        case .notDetermined:
+            isAuthorized = false
+            authorizationStatus = "未認証"
+        @unknown default:
+            isAuthorized = false
+            authorizationStatus = "不明"
+        }
+        logDebugInfo()
+    }
+    
+    // 認証をリクエスト
+    func requestAuthorization() {
+        Task {
+            do {
+                try await authorizationCenter.requestAuthorization(for: .individual)
+                await MainActor.run {
+                    checkAuthorizationStatus()
+                }
+            } catch {
+                print("認証エラー: \(error)")
+                await MainActor.run {
+                    authorizationStatus = "認証エラー"
+                }
+            }
+        }
+    }
+    
+    // 手動で制限を切り替え
+    func toggleRestriction() {
+        if isRestrictionEnabled {
+            disableRestriction()
+        } else {
+            enableRestriction()
+        }
+    }
+    
+    // 制限を有効化（カテゴリ選択の問題を修正）
+    private func enableRestriction() {
+        guard isAuthorized else { return }
+        
+        let selection = activitySelectionStore.selection
+        let hasAppsSelected = !selection.applicationTokens.isEmpty
+        let hasCategoriesSelected = !selection.categoryTokens.isEmpty
+        let hasWebDomainsSelected = !selection.webDomainTokens.isEmpty
+        
+        guard hasAppsSelected || hasCategoriesSelected || hasWebDomainsSelected else {
+            print("制限対象が選択されていません")
+            // 選択がない場合、もし有効なら無効化する
+            if isRestrictionEnabled {
+                disableRestriction()
+            }
+            return
+        }
+        
+        // 既存の設定をクリアしてから適用
+        store.clearAllSettings()
+        
+        // アプリの制限を設定
+        store.shield.applications = selection.applicationTokens
+        
+        // カテゴリの制限を設定
+        if !selection.categoryTokens.isEmpty {
+            store.shield.applicationCategories = ShieldSettings.ActivityCategoryPolicy.specific(
+                selection.categoryTokens,
+                except: Set<ApplicationToken>()
+            )
+        }
+        
+        // Webドメインの制限を設定
+        store.shield.webDomains = selection.webDomainTokens
+        
+        // Webコンテンツもブロックしたい場合
+        store.webContent.blockedByFilter = .all()
+        
+        DispatchQueue.main.async {
+            self.isRestrictionEnabled = true
+            print("アプリ制限を有効化しました")
+            self.logDebugInfo()
+        }
+    }
+    
+    // 制限を無効化
+    private func disableRestriction() {
+        // すべての制限を解除
+        store.clearAllSettings()
+        
+        DispatchQueue.main.async {
+            self.isRestrictionEnabled = false
+            print("アプリ制限を無効化しました")
+            self.logDebugInfo()
+        }
+    }
+    
+    // Secure Bubble内での自動制限有効化
+    func enableRestrictionForSecureBubble() {
+        guard isUWBLinked else { return }
+        enableRestriction()
+    }
+    
+    // Secure Bubble外での自動制限無効化
+    func disableRestrictionForSecureBubble() {
+        guard isUWBLinked else { return }
+        disableRestriction()
+    }
+    
+    // 選択されたアプリの数を取得
+    var selectedAppsCount: Int {
+        return activitySelectionStore.selection.applicationTokens.count
+    }
+    
+    // 選択されたアプリを全て削除
+    func clearSelectedApps() {
+        activitySelectionStore.clearSelection()
+        logDebugInfo()
+    }
+    
+    // 選択状態の詳細情報
+    var selectionDetails: String {
+        let appsCount = activitySelectionStore.selection.applicationTokens.count
+        let categoriesCount = activitySelectionStore.selection.categoryTokens.count
+        let webDomainsCount = activitySelectionStore.selection.webDomainTokens.count
+        
+        var details: [String] = []
+        if appsCount > 0 { details.append("アプリ: \(appsCount)個") }
+        if categoriesCount > 0 { details.append("カテゴリ: \(categoriesCount)個") }
+        if webDomainsCount > 0 { details.append("Webドメイン: \(webDomainsCount)個") }
+        
+        return details.isEmpty ? "未選択" : details.joined(separator: ", ")
+    }
+    
+    // ShieldActionExtensionからの通知を設定
+    private func setupShieldActionNotifications() {
+        // App Groupsを使用した定期的なポーリング
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            self.checkForShieldActions()
+        }
+    }
+    
+    private func checkForShieldActions() {
+        // App Groupsから未処理のアクションを確認
+        let defaults = UserDefaults(suiteName: "group.com.locationreminder.shieldaction")
+        guard defaults?.string(forKey: "pendingAction") != nil else { return }
+        
+        // 処理済みのアクションでないことを確認
+        if let lastCheck = defaults?.object(forKey: "lastProcessedTimestamp") as? Date,
+           let actionTimestamp = defaults?.object(forKey: "actionTimestamp") as? Date,
+           actionTimestamp <= lastCheck {
+            return
+        }
+        
+        // アクションを処理
+        handleShieldAction()
+        
+        // 処理済みとしてマーク
+        defaults?.set(Date(), forKey: "lastProcessedTimestamp")
+    }
+    
+    // ShieldActionExtensionからの通知を処理
+    private func handleShieldAction() {
+        DispatchQueue.main.async {
+            // App Groupsからアクション情報を取得
+            let defaults = UserDefaults(suiteName: "group.com.locationreminder.shieldaction")
+            guard let action = defaults?.string(forKey: "pendingAction") else { return }
+            
+            // アクションを実行
+            switch action {
+            case "openSettings":
+                self.openSettings()
+            default:
+                break
+            }
+            
+            // 処理済みのアクションを削除
+            defaults?.removeObject(forKey: "pendingAction")
+            defaults?.removeObject(forKey: "actionTimestamp")
+        }
+    }
+    
+    // 設定アプリを開く
+    private func openSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        
+        if UIApplication.shared.canOpenURL(settingsURL) {
+            UIApplication.shared.open(settingsURL, options: [:], completionHandler: nil)
+        }
+    }
+    
+    // デイニシャライザでリソースをクリーンアップ
+    deinit {
+        // タイマーは自動的に停止される
+    }
 }
 
 struct ScreenTimeSettingsView: View {
     @StateObject private var screenTimeManager = ScreenTimeManager()
     @ObservedObject private var uwbManager = UWBManager.shared
     @State private var showingAppSelection = false
-    
-    // モックアプリデータ
-    private let mockApps = [
-        MockAppInfo(name: "Instagram", bundleIdentifier: "com.instagram.app", iconName: "camera.circle.fill"),
-        MockAppInfo(name: "TikTok", bundleIdentifier: "com.tiktok.app", iconName: "video.circle.fill"),
-        MockAppInfo(name: "Twitter", bundleIdentifier: "com.twitter.app", iconName: "message.circle.fill"),
-        MockAppInfo(name: "YouTube", bundleIdentifier: "com.youtube.app", iconName: "play.circle.fill"),
-        MockAppInfo(name: "Safari", bundleIdentifier: "com.apple.safari", iconName: "safari.fill"),
-        MockAppInfo(name: "Chrome", bundleIdentifier: "com.google.chrome", iconName: "globe.circle.fill")
-    ]
+    @State private var showingPermissionAlert = false
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        List {
-                // 認証セクション
+        NavigationView {
+            List {
+                // UWB連動設定
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Image(systemName: screenTimeManager.isAuthorized ? "checkmark.shield.fill" : "shield.slash.fill")
-                                .foregroundColor(screenTimeManager.isAuthorized ? .green : .red)
-                                .font(.title2)
+                            Image(systemName: "wave.3.right.circle.fill")
+                                .foregroundColor(screenTimeManager.isUWBLinked ? .blue : .gray)
                             
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Family Controls認証")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("UWB Secure Bubble連動")
                                     .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text(screenTimeManager.authorizationStatus)
+                                Text(screenTimeManager.isUWBLinked ? "有効" : "無効")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                             
                             Spacer()
                             
-                            if !screenTimeManager.isAuthorized {
-                                Button("認証") {
-                                    screenTimeManager.requestAuthorization()
+                            Toggle("", isOn: $screenTimeManager.isUWBLinked)
+                        }
+                        
+                        if screenTimeManager.isUWBLinked {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("現在の状態:")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                
+                                HStack {
+                                    Circle()
+                                        .fill(uwbManager.isInSecureBubble ? .green : .red)
+                                        .frame(width: 8, height: 8)
+                                    Text(uwbManager.isInSecureBubble ? "Secure Bubble内 - 制限有効" : "Secure Bubble外 - 制限無効")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
-                                .cornerRadius(8)
+                                
+                                if let distance = uwbManager.currentDistance {
+                                    HStack {
+                                        Image(systemName: "location.circle.fill")
+                                            .foregroundColor(.blue)
+                                            .font(.caption)
+                                        Text(String(format: "距離: %.2fm", distance))
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
                             }
+                            .padding(.top, 4)
                         }
-                        
-                        if !screenTimeManager.isAuthorized {
-                            Text("⚠️ Family Controls APIの使用には、Appleからの特別な許可が必要です。通常、保護者制御アプリや組織管理アプリでのみ承認されます。")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                                .padding(.top, 8)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                } header: {
-                    Text("認証状態")
-                }
-                
-                // UWB連動設定
-                Section {
-                    HStack {
-                        Image(systemName: "wave.3.right.circle.fill")
-                            .foregroundColor(screenTimeManager.isUWBLinked ? .blue : .gray)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("UWB Secure Bubble連動")
-                                .font(.headline)
-                            Text(screenTimeManager.isUWBLinked ? "有効" : "無効")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Toggle("", isOn: $screenTimeManager.isUWBLinked)
                     }
                     .padding(.vertical, 4)
-                    
-                    if screenTimeManager.isUWBLinked {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("現在の状態:")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            
-                            HStack {
-                                Circle()
-                                    .fill(uwbManager.isInSecureBubble ? .green : .red)
-                                    .frame(width: 8, height: 8)
-                                Text(uwbManager.isInSecureBubble ? "Secure Bubble内 - 制限有効" : "Secure Bubble外 - 制限無効")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
                 } header: {
                     Text("UWB連動設定")
                 } footer: {
@@ -154,7 +374,11 @@ struct ScreenTimeSettingsView: View {
                 // アプリ選択
                 Section {
                     Button(action: {
-                        showingAppSelection = true
+                        if screenTimeManager.isAuthorized {
+                            showingAppSelection = true
+                        } else {
+                            showingPermissionAlert = true
+                        }
                     }) {
                         HStack {
                             Image(systemName: "apps.iphone")
@@ -165,15 +389,9 @@ struct ScreenTimeSettingsView: View {
                                     .foregroundColor(.primary)
                                     .font(.headline)
                                 
-                                if screenTimeManager.selectedApps.isEmpty {
-                                    Text("未選択")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("\(screenTimeManager.selectedApps.count)個のアプリを選択済み")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                                Text(screenTimeManager.selectionDetails)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                             
                             Spacer()
@@ -185,140 +403,65 @@ struct ScreenTimeSettingsView: View {
                     }
                     .disabled(!screenTimeManager.isAuthorized)
                     
-                    // 選択されたアプリ一覧
-                    if !screenTimeManager.selectedApps.isEmpty {
-                        ForEach(screenTimeManager.selectedApps, id: \.id) { app in
-                            HStack {
-                                Image(systemName: app.iconName)
-                                    .foregroundColor(.blue)
-                                Text(app.name)
-                                    .font(.subheadline)
-                                Spacer()
-                                Button("削除") {
-                                    screenTimeManager.selectedApps.removeAll { $0.id == app.id }
-                                }
-                                .font(.caption)
-                                .foregroundColor(.red)
-                            }
+                    // 選択されたアプリをクリア
+                    if screenTimeManager.selectedAppsCount > 0 {
+                        Button("選択したアプリをクリア") {
+                            screenTimeManager.clearSelectedApps()
                         }
+                        .foregroundColor(.red)
+                        .font(.caption)
                     }
                 } header: {
                     Text("制限対象アプリ")
                 } footer: {
-                    Text("実際の実装では、FamilyControls.FamilyActivityPickerを使用してユーザーがアプリを選択します。")
+                    Text("FamilyActivityPickerを使用してシステムのアプリ選択画面を表示します。")
                 }
-                
-                // 制御状態
-                Section {
-                    HStack {
-                        Image(systemName: screenTimeManager.isRestrictionEnabled ? "lock.fill" : "lock.open.fill")
-                            .foregroundColor(screenTimeManager.isRestrictionEnabled ? .red : .green)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("制限状態")
-                                .font(.headline)
-                            Text(screenTimeManager.isRestrictionEnabled ? "制限中" : "制限なし")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Button(screenTimeManager.isRestrictionEnabled ? "制限解除" : "制限適用") {
-                            screenTimeManager.toggleRestriction()
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(screenTimeManager.isRestrictionEnabled ? Color.green : Color.red)
-                        .cornerRadius(6)
-                        .disabled(!screenTimeManager.isAuthorized)
+            }
+            .navigationTitle("Screen Time設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完了") {
+                        dismiss()
                     }
-                } header: {
-                    Text("現在の制限状態")
-                } footer: {
-                    Text("実際の実装では、ManagedSettingsを使用してShieldConfigurationでアプリをブロックします。")
-                }
-        }
-        .navigationTitle("Screen Time設定")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingAppSelection) {
-            AppSelectionView(
-                selectedApps: $screenTimeManager.selectedApps,
-                availableApps: mockApps
-            )
-        }
-        .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
-            // UWB状態変化に応じて制限を切り替え
-            if screenTimeManager.isUWBLinked && screenTimeManager.isAuthorized {
-                if isInBubble {
-                    screenTimeManager.enableRestrictionForSecureBubble()
-                } else {
-                    screenTimeManager.disableRestrictionForSecureBubble()
                 }
             }
         }
-    }
-}
-
-// アプリ選択画面
-struct AppSelectionView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var selectedApps: [MockAppInfo]
-    let availableApps: [MockAppInfo]
-    
-    var body: some View {
-        List {
-                Section {
-                    Text("⚠️ これはプレビュー画面です。実際の実装では、FamilyControls.FamilyActivityPickerを使用してシステムのアプリ選択画面を表示します。")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .padding(.vertical, 8)
-                } header: {
-                    Text("注意事項")
+        .familyActivityPicker(
+            isPresented: $showingAppSelection,
+            selection: $screenTimeManager.activitySelectionStore.selection
+        )
+        .onChange(of: screenTimeManager.activitySelectionStore.selection) { newSelection in
+            // 選択が変更されたときのログ出力
+            print("アプリ選択が変更されました:")
+            print("- アプリ数: \(newSelection.applicationTokens.count)")
+            print("- カテゴリ数: \(newSelection.categoryTokens.count)")
+            print("- Webドメイン数: \(newSelection.webDomainTokens.count)")
+            
+            // 選択を永続化
+            screenTimeManager.activitySelectionStore.saveSelection()
+        }
+        .alert("認証が必要です", isPresented: $showingPermissionAlert) {
+            Button("OK") { }
+        } message: {
+            Text("アプリ選択機能を使用するには、Family Controlsの認証が必要です。")
+        }
+        .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
+            // UWB状態が変化してから0.5秒待って処理を実行（チャタリング防止）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                // 0.5秒後に再度状態を確認し、変わっていなければ実行
+                guard uwbManager.isInSecureBubble == isInBubble else {
+                    print("UWB状態が再度変更されたため、アクションをキャンセルしました。")
+                    return
                 }
                 
-                Section {
-                    ForEach(availableApps, id: \.id) { app in
-                        HStack {
-                            Image(systemName: app.iconName)
-                                .foregroundColor(.blue)
-                                .frame(width: 24)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(app.name)
-                                    .font(.headline)
-                                Text(app.bundleIdentifier)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            if selectedApps.contains(where: { $0.id == app.id }) {
-                                Button("削除") {
-                                    selectedApps.removeAll { $0.id == app.id }
-                                }
-                                .foregroundColor(.red)
-                            } else {
-                                Button("追加") {
-                                    selectedApps.append(app)
-                                }
-                                .foregroundColor(.blue)
-                            }
-                        }
-                        .padding(.vertical, 4)
+                // UWB状態変化に応じて制限を自動切り替え
+                if screenTimeManager.isUWBLinked && screenTimeManager.isAuthorized {
+                    if isInBubble {
+                        screenTimeManager.enableRestrictionForSecureBubble()
+                    } else {
+                        screenTimeManager.disableRestrictionForSecureBubble()
                     }
-                } header: {
-                    Text("利用可能なアプリ")
-                }
-        }
-        .navigationTitle("アプリ選択")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("完了") {
-                    dismiss()
                 }
             }
         }

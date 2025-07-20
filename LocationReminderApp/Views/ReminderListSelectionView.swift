@@ -8,6 +8,10 @@ struct ReminderListSelectionView: View {
     @State private var availableLists: [EKCalendar] = []
     @State private var selectedList: EKCalendar?
     @State private var isLoading = true
+    @State private var showingCreateListAlert = false
+    @State private var newListName = ""
+    @State private var showingError = false
+    @State private var errorMessage = ""
     
     var body: some View {
         NavigationView {
@@ -30,19 +34,29 @@ struct ReminderListSelectionView: View {
                             .font(.title2)
                             .fontWeight(.bold)
                         
-                        Text("リマインダーアプリでリストを作成してから再度お試しください。")
+                        Text("新しいリストを作成するか、リマインダーアプリでリストを作成してから再度お試しください。")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
                             .padding(.horizontal)
                         
-                        Button("再読み込み") {
-                            loadAvailableLists()
+                        VStack(spacing: 12) {
+                            Button("新しいリストを作成") {
+                                showingCreateListAlert = true
+                            }
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                            
+                            Button("再読み込み") {
+                                loadAvailableLists()
+                            }
+                            .foregroundColor(.blue)
+                            .padding()
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(10)
                         }
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
                     }
                     .padding()
                 } else {
@@ -67,6 +81,17 @@ struct ReminderListSelectionView: View {
                             }
                         }
                         .listStyle(InsetGroupedListStyle())
+                        
+                        // 新規リスト作成ボタン
+                        Button("新しいリストを作成") {
+                            showingCreateListAlert = true
+                        }
+                        .foregroundColor(.blue)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
                     }
                 }
             }
@@ -90,6 +115,23 @@ struct ReminderListSelectionView: View {
                     .fontWeight(.semibold)
                 }
             }
+            .alert("新しいリストを作成", isPresented: $showingCreateListAlert) {
+                TextField("リスト名を入力", text: $newListName)
+                Button("キャンセル") {
+                    newListName = ""
+                }
+                Button("作成") {
+                    createNewList()
+                }
+                .disabled(newListName.isEmpty)
+            } message: {
+                Text("新しいリマインダーリストの名前を入力してください。")
+            }
+            .alert("エラー", isPresented: $showingError) {
+                Button("OK") { }
+            } message: {
+                Text(errorMessage)
+            }
         }
         .onAppear {
             loadAvailableLists()
@@ -106,6 +148,27 @@ struct ReminderListSelectionView: View {
         }
         
         isLoading = false
+    }
+    
+    private func createNewList() {
+        guard !newListName.isEmpty else { return }
+        
+        do {
+            let newCalendar = try taskManager.createNewReminderList(named: newListName)
+            
+            // リストを再読み込み
+            loadAvailableLists()
+            
+            // 新しく作成されたリストを自動選択
+            selectedList = newCalendar
+            
+            // 入力フィールドをリセット
+            newListName = ""
+            
+        } catch {
+            errorMessage = "リストの作成に失敗しました: \(error.localizedDescription)"
+            showingError = true
+        }
     }
 }
 

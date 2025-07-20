@@ -1047,6 +1047,24 @@ class EventKitTaskManager: ObservableObject {
         completedTasks = []
     }
     
+    /// 新規リマインダーリストを作成
+    func createNewReminderList(named title: String) throws -> EKCalendar {
+        guard isAuthorized() else {
+            throw NSError(domain: "TaskManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "リマインダーアクセスの認証が必要です"])
+        }
+        
+        // 新しいリマインダーリストを作成
+        let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
+        newCalendar.title = title
+        newCalendar.source = eventStore.defaultCalendarForNewReminders()?.source
+        
+        // EventStoreに保存
+        try eventStore.saveCalendar(newCalendar, commit: true)
+        
+        print("新しいリマインダーリスト「\(title)」を作成しました")
+        return newCalendar
+    }
+    
     // MARK: - 統計・分析機能
     
     /// 基本統計情報
