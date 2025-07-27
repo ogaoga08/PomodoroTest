@@ -1,18 +1,19 @@
 import SwiftUI
 import EventKit
+import FamilyControls
+import ManagedSettings
+import DeviceActivity
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
     @StateObject private var uwbManager: UWBManager = UWBManager.shared
+    @StateObject private var screenTimeManager = ScreenTimeManager()
 
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil
     @State private var showingCompletedTasks = false
-    @State private var showingUWBSettings = false
-    @State private var showingScreenTimeSettings = false
-    @State private var showingOnboarding = false
     @State private var showingReminderListSelection = false
-    @State private var showingStatistics = false
+    @State private var showingMenu = false
     
     // チェックボタンの遅延機能用
     @State private var pendingCompletions: [UUID: Timer] = [:]
@@ -26,12 +27,6 @@ struct ContentView: View {
     
     var futureTasks: [TaskItem] {
         taskManager.getParentTasks().filter { !Calendar.current.isDateInToday($0.dueDate) && $0.dueDate > Date() }
-    }
-    
-    var completionRate: Double {
-        let completedTasks = taskManager.getCompletedParentTasks().count
-        let totalTasks = completedTasks + taskManager.getParentTasks().count
-        return totalTasks > 0 ? Double(completedTasks) / Double(totalTasks) : 0.0
     }
     
     var body: some View {
@@ -102,87 +97,6 @@ struct ContentView: View {
                 } else if isAuthorizedForReminders(taskManager.authorizationStatus) {
                     // 通常のタスク表示
                     VStack(spacing: 0) {
-                        // ヘッダー統計（改善版）
-                        VStack(spacing: 20) {
-                            HStack(spacing: 20) {
-                                // 残りのタスク（赤ベース）
-                                VStack(spacing: 8) {
-                                    Text("残りのタスク")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.white)
-                                    Text("\(todayTasks.count)")
-                                        .font(.largeTitle)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                                .background(
-                                    LinearGradient(
-                                        colors: [Color.red.opacity(0.8), Color.red.opacity(0.6)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .cornerRadius(16)
-                                
-                                // 期限遂行率（青ベース） - タップで統計画面へ
-                                VStack(spacing: 8) {
-                                    VStack(spacing: 4) {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "chart.bar.fill")
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.8))
-                                            Text("期限遂行率")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.white)
-                                        }
-                                    }
-                                    Text("\(Int(completionRate * 100))%")
-                                        .font(.largeTitle)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                                .background(
-                                    LinearGradient(
-                                        colors: [Color.blue.opacity(0.8), Color.blue.opacity(0.6)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .cornerRadius(16)
-                            }
-                            .padding(.horizontal, 20)
-                        }
-                        .padding(.vertical, 20)
-                        .background(Color(.systemGroupedBackground))
-                        
-                        // 統計画面へのボタンを中央揃えで追加
-                        HStack {
-                            Spacer()
-                            Button(action: { showingStatistics = true }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "chart.bar.fill")
-                                        .font(.caption)
-                                    Text("その他の統計")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.blue)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(12)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
-                        .background(Color(.systemGroupedBackground))
                         
                         // タスクリスト
                         List {
@@ -327,7 +241,7 @@ struct ContentView: View {
                                         .font(.title2)
                                         .foregroundColor(.white)
                                         .frame(width: 56, height: 56)
-                                        .background(Color.blue)
+                                        .background(Color.blue.opacity(0.8))
                                         .clipShape(Circle())
                                         .shadow(radius: 4)
                                 }
@@ -364,40 +278,20 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack {
                         if uwbManager.isUWBActive {
-                            Button(action: { showingUWBSettings = true }) {
-                                                        HStack(spacing: 6) {
-                            Image(systemName: uwbManager.isBackgroundMode ? "wave.3.right.circle" : "wave.3.right.circle.fill")
-                                .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("UWB")
-                                    .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
-                                    .fontWeight(.medium)
-                                    .font(.caption)
-                                
-                                Text(uwbManager.isBackgroundMode ? "バックグラウンド" : "通信中")
-                                    .foregroundColor(uwbManager.isBackgroundMode ? .gray.opacity(0.8) : .orange.opacity(0.8))
-                                    .font(.caption2)
-//                                        if let distance = uwbManager.currentDistance {
-//                                            Text(String(format: "%.2fm", distance))
-//                                                .foregroundColor(.orange.opacity(0.8))
-//                                                .font(.caption2)
-//                                        } else {
-//                                            Text("-.--m")
-//                                                .foregroundColor(.orange.opacity(0.8))
-//                                                .font(.caption2)
-//                                        }
+                            NavigationLink(destination: UWBSettingsView()) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: uwbManager.isBackgroundMode ? "wave.3.right.circle" : "wave.3.right.circle.fill")
+                                        .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("UWB")
+                                            .foregroundColor(uwbManager.isBackgroundMode ? .gray : .orange)
+                                            .fontWeight(.medium)
+                                            .font(.caption)
+                                        
+                                        Text(uwbManager.isBackgroundMode ? "バックグラウンド" : "通信中")
+                                            .foregroundColor(uwbManager.isBackgroundMode ? .gray.opacity(0.8) : .orange.opacity(0.8))
+                                            .font(.caption2)
                                     }
-                                    
-//                                    // Secure Bubble状態表示
-//                                    VStack(alignment: .leading, spacing: 1) {
-//                                        Text("部屋")
-//                                            .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
-//                                            .fontWeight(.medium)
-//                                            .font(.caption)
-//                                        Text(uwbManager.isInSecureBubble ? "入室中" : "退室中")
-//                                            .foregroundColor(uwbManager.isInSecureBubble ? .green.opacity(0.8) : .red.opacity(0.8))
-//                                            .font(.caption2)
-//                                    }
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -410,41 +304,22 @@ struct ContentView: View {
             
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        // 現在選択されているリストを表示
+                    HStack(spacing: 12) {
+                        // リマインダーリスト変更ボタン（リストが選択済みの場合のみ表示）
                         if !taskManager.needsListSelection {
-                            Section("現在のリスト") {
-                                Text(taskManager.getCurrentReminderListName())
-                                    .foregroundColor(.secondary)
-                            }
-                            
                             Button(action: { showingReminderListSelection = true }) {
-                                Label("リマインダーリスト変更", systemImage: "list.bullet.rectangle")
+                                Image(systemName: "list.bullet.rectangle")
+                                    .font(.title3)
+                                    .foregroundColor(.blue)
                             }
-                            
-                            Divider()
                         }
                         
-                        Button(action: { showingStatistics = true }) {
-                            Label("統計・分析", systemImage: "chart.bar.fill")
+                        // 設定画面へのNavigationLink
+                        NavigationLink(destination: MenuView(taskManager: taskManager)) {
+                            Image(systemName: "gear")
+                                .font(.title3)
+                                .foregroundColor(.blue)
                         }
-                        
-                        Divider()
-                        
-                        Button(action: { showingUWBSettings = true }) {
-                            Label("UWBモジュール設定", systemImage: "wave.3.right")
-                        }
-                        
-                        Button(action: { showingScreenTimeSettings = true }) {
-                            Label("Screen Time設定", systemImage: "hourglass")
-                        }
-                        
-                        Button(action: { showingOnboarding = true }) {
-                            Label("使い方", systemImage: "questionmark.circle")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.title2)
                     }
                 }
             })
@@ -465,29 +340,39 @@ struct ContentView: View {
                 TaskDetailView(task: $taskManager.completedTasks[completedTaskIndex], taskManager: taskManager)
             }
         }
-        .sheet(isPresented: $showingUWBSettings) {
-            UWBSettingsView()
-        }
-        .sheet(isPresented: $showingScreenTimeSettings) {
-            ScreenTimeSettingsView()
-        }
-        .sheet(isPresented: $showingOnboarding) {
-            OnboardingView()
-        }
         .sheet(isPresented: $showingReminderListSelection) {
             ReminderListSelectionView(
                 taskManager: taskManager,
                 isPresented: $showingReminderListSelection
             )
         }
-        .sheet(isPresented: $showingStatistics) {
-            StatisticsView(taskManager: taskManager)
-        }
         .onAppear {
-            // UWBManagerにTaskManagerの参照を設定
+            // UWBManagerにTaskManagerとScreenTimeManagerの参照を設定
             uwbManager.taskManager = taskManager
+            uwbManager.screenTimeManager = screenTimeManager
+        }
+        .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
+            // UWB状態が変化してから2秒待って処理を実行（チャタリング防止）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                // 2秒後に再度状態を確認し、変わっていなければ実行
+                guard uwbManager.isInSecureBubble == isInBubble else {
+                    print("UWB状態が再度変更されたため、ScreenTimeアクションをキャンセルしました。")
+                    return
+                }
+                
+                // UWB状態変化に応じてScreenTime制限を自動切り替え
+                if screenTimeManager.isUWBLinked && screenTimeManager.isAuthorized {
+                    print("UWB状態変化でScreenTime制限を切り替え: \(isInBubble ? "有効化" : "無効化")")
+                    if isInBubble {
+                        screenTimeManager.enableRestrictionForSecureBubble()
+                    } else {
+                        screenTimeManager.disableRestrictionForSecureBubble()
+                    }
+                }
+            }
         }
         .environmentObject(taskManager)
+        .environmentObject(screenTimeManager)
     }
     
     // タスク完了の遅延処理

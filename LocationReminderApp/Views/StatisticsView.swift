@@ -39,14 +39,7 @@ struct StatisticsView: View {
                 .padding(.bottom, 20)
             }
             .navigationTitle("統計")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") {
-                        dismiss()
-                    }
-                }
-            }
+            .navigationBarTitleDisplayMode(.inline)           
         }
     }
 }
@@ -60,6 +53,70 @@ struct OverviewStatisticsView: View {
     
     var body: some View {
         VStack(spacing: 20) {
+            // メイン統計カード（大きめ表示）
+            VStack(spacing: 20) {
+                Text("今日の状況")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack(spacing: 20) {
+                    // 残りのタスク（赤ベース）
+                    VStack(spacing: 8) {
+                        Text("残りのタスク")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                        Text("\(statistics.todayTasks)")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.red.opacity(0.8), Color.red.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(16)
+                    
+                    // 期限遂行率（青ベース）
+                    VStack(spacing: 8) {
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chart.bar.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.8))
+                                Text("期限遂行率")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        Text("\(Int(statistics.completionRate * 100))%")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.8), Color.blue.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(16)
+                }
+            }
+            .padding()
+            .background(Color(.systemGroupedBackground))
+            .cornerRadius(12)
+            
             // 全体統計カード
             VStack(spacing: 16) {
                 Text("全体統計")
@@ -79,24 +136,10 @@ struct OverviewStatisticsView: View {
                     )
                     
                     StatCard(
-                        title: "完了率",
-                        value: "\(Int(statistics.completionRate * 100))%",
-                        color: .green,
-                        icon: "checkmark.circle"
-                    )
-                    
-                    StatCard(
                         title: "未完了",
                         value: "\(statistics.pendingTasks)",
                         color: .orange,
                         icon: "clock"
-                    )
-                    
-                    StatCard(
-                        title: "期限超過",
-                        value: "\(statistics.overdueTasks)",
-                        color: .red,
-                        icon: "exclamationmark.triangle"
                     )
                 }
             }
@@ -104,26 +147,26 @@ struct OverviewStatisticsView: View {
             .background(Color(.systemGroupedBackground))
             .cornerRadius(12)
             
-            // 今日の統計
+            // 詳細統計
             VStack(spacing: 16) {
-                Text("今日の状況")
+                Text("詳細統計")
                     .font(.title2)
                     .fontWeight(.bold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 HStack(spacing: 16) {
                     StatCard(
-                        title: "今日のタスク",
-                        value: "\(statistics.todayTasks)",
-                        color: .purple,
-                        icon: "calendar.badge.clock"
-                    )
-                    
-                    StatCard(
                         title: "今日完了",
                         value: "\(statistics.todayCompleted)",
                         color: .green,
                         icon: "checkmark.circle.fill"
+                    )
+                    
+                    StatCard(
+                        title: "期限超過",
+                        value: "\(statistics.overdueTasks)",
+                        color: .red,
+                        icon: "exclamationmark.triangle"
                     )
                 }
             }

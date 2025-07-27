@@ -158,9 +158,14 @@ class UWBManager: NSObject, ObservableObject {
     @Published var notificationsEnabled = true // 通知が有効かどうか
     @Published var isBackgroundMode = false // バックグラウンドモードかどうか
     @Published var backgroundSessionActive = false // バックグラウンドセッションがアクティブかどうか
+    @Published var isRepairing = false // 再ペアリング処理中かどうか
+    @Published var repairAttemptCount: Int = 0 // 再ペアリング試行回数
     
     // TaskManagerへの参照を追加
     weak var taskManager: EventKitTaskManager?
+    
+    // ScreenTimeManagerへの参照を追加
+    weak var screenTimeManager: ScreenTimeManager?
     
     private var centralManager: CBCentralManager?
     private var niSessions: [Int: NISession] = [:]
@@ -184,11 +189,22 @@ class UWBManager: NSObject, ObservableObject {
     private var lastBackgroundUpdate = Date()
     private var backgroundHeartbeatStartTime: Date?
     
+    // 再ペアリング関連
+    private var repairTimers: [Int: Timer] = [:]  // デバイス毎の再ペアリングタイマー
+    private var repairAttempts: [Int: Int] = [:]  // デバイス毎の再試行回数
+    private let maxRepairAttempts = 10  // 最大再試行回数
+    private let baseRepairInterval: TimeInterval = 2.0  // 基本再試行間隔（秒）
+    private let maxRepairInterval: TimeInterval = 60.0  // 最大再試行間隔（秒）
+    
+    // バックグラウンド再ペアリング管理用（1台限定）
+    private var repairingDeviceID: Int? = nil  // 再ペアリングが必要なデバイスID（1台のみ）
+    private var lastRepairTime: Date = Date.distantPast  // 最後の再ペアリング試行時刻
+    
     private override init() {
         super.init()
-        centralManager = CBCentralManager(delegate: self, queue: nil)
-        notificationManager.requestAuthorization()
-        setupBackgroundProcessing()
+        self.centralManager = CBCentralManager(delegate: self, queue: nil)
+        self.notificationManager.requestAuthorization()
+        self.setupBackgroundProcessing()
     }
     
     // 当日までのタスク（期限切れも含む）を取得するメソッド
@@ -205,51 +221,68 @@ class UWBManager: NSObject, ObservableObject {
         guard let centralManager = centralManager else { return }
         
         if centralManager.state == .poweredOn {
-            logger.info("Bluetooth スキャン開始")
             centralManager.scanForPeripherals(
                 withServices: [QorvoNIService.serviceUUID],
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
             )
-            isScanning = true
-            scanningError = nil
+            self.isScanning = true
+            self.scanningError = nil
         } else {
-            scanningError = "Bluetoothが利用できません"
-            logger.error("Bluetoothが利用できない状態: \(centralManager.state.rawValue)")
+            self.scanningError = "Bluetoothが利用できません"
         }
     }
     
     func stopScanning() {
-        centralManager?.stopScan()
-        isScanning = false
-        logger.info("スキャン停止")
+        self.centralManager?.stopScan()
+        self.isScanning = false
     }
     
     func connectToDevice(_ device: UWBDevice) {
-        guard let centralManager = centralManager else { return }
+        guard let centralManager = self.centralManager else { return }
         
-        logger.info("デバイスへ接続開始: \(device.name)")
-        isConnecting = true
+        logger.info("📱 接続開始: \(device.name)")
+        self.isConnecting = true
         device.status = .connected
         centralManager.connect(device.peripheral, options: nil)
     }
     
     func disconnectFromDevice(_ device: UWBDevice) {
-        guard let centralManager = centralManager else { return }
+        guard let centralManager = self.centralManager else { return }
         
-        logger.info("デバイスから切断: \(device.name)")
+        logger.info("📱 切断: \(device.name)")
         centralManager.cancelPeripheralConnection(device.peripheral)
         
         // NISessionを無効化
-        if let session = niSessions[device.uniqueID] {
+        if let session = self.niSessions[device.uniqueID] {
             session.invalidate()
-            niSessions.removeValue(forKey: device.uniqueID)
+            self.niSessions.removeValue(forKey: device.uniqueID)
         }
-        accessoryConfigurations.removeValue(forKey: device.uniqueID)
+        self.accessoryConfigurations.removeValue(forKey: device.uniqueID)
+        
+        // 再ペアリングプロセスも停止
+        self.stopRepairProcess(for: device)
         
         DispatchQueue.main.async {
             device.status = DeviceStatus.discovered
             device.distance = nil
         }
+        
+        self.updateConnectionStatus()
+    }
+    
+    func disconnectAllDevices() {
+        guard let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) else {
+            return
+        }
+        
+        disconnectFromDevice(connectedDevice)
+        
+        // 全ての再ペアリングプロセスを停止
+        stopAllRepairProcesses()
+        
+        logger.info("�� 全デバイス切断完了")
     }
     
     func removeDeviceFromSaved(_ device: UWBDevice) {
@@ -349,8 +382,6 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     private func handleAccessoryConfigurationData(_ configData: Data, device: UWBDevice) {
-        logger.info("アクセサリ設定データを受信: \(device.name)")
-        
         do {
             // iOS 15対応: データから直接設定を作成
             let configuration = try NINearbyAccessoryConfiguration(
@@ -373,10 +404,10 @@ class UWBManager: NSObject, ObservableObject {
                 self.niPermissionStatus = "許可要求中..."
             }
             
-            logger.info("NISession開始: \(device.name) - 許可ダイアログ表示")
+            logger.info("📱 NISession開始: \(device.name)")
             
         } catch {
-            logger.error("設定データの解析に失敗: \(error)")
+            logger.error("設定データ解析失敗: \(error)")
             handleNIError(error)
         }
     }
@@ -386,7 +417,7 @@ class UWBManager: NSObject, ObservableObject {
             device.status = DeviceStatus.ranging
         }
         updateConnectionStatus()
-        logger.info("UWB測定開始: \(device.name)")
+        logger.info("📡 UWB測定開始: \(device.name)")
     }
     
     private func handleUWBDidStop(device: UWBDevice) {
@@ -395,7 +426,7 @@ class UWBManager: NSObject, ObservableObject {
             device.distance = nil
         }
         updateConnectionStatus()
-        logger.info("UWB測定停止: \(device.name)")
+        logger.info("📡 UWB測定停止: \(device.name)")
     }
     
     private func handleAccessoryPaired(device: UWBDevice) {
@@ -415,43 +446,42 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     private func handleiOSNotify(data: Data, device: UWBDevice) {
-        guard notificationsEnabled else { return }
-        
-        // データの最初の3バイトをスキップして、メッセージを取得
+        // メッセージの解析
         if data.count > 3, let message = String(bytes: data.advanced(by: 3), encoding: .utf8) {
+            
             // デバイスからのメッセージを直接解釈して、bubbleの状態を判断する
             // これにより、アプリ内の状態更新とのタイムラグの問題を解消する
             let isInBubbleBasedOnMessage = message.contains("in")
             
-            // 前回の状態から変更がある場合のみ処理
-            if previousSecureBubbleStatus != isInBubbleBasedOnMessage {
+            // 初回判定または前回の状態から変更がある場合に処理
+            let shouldProcess = previousSecureBubbleStatus == nil || previousSecureBubbleStatus != isInBubbleBasedOnMessage
+            
+            if shouldProcess {
                 DispatchQueue.main.async {
                     self.isInSecureBubble = isInBubbleBasedOnMessage
                 }
+                
                 previousSecureBubbleStatus = isInBubbleBasedOnMessage
                 
-                let todayTasks = getTasksDueUntilToday()
-                notificationManager.setRoomStatusNotification(
-                    deviceName: device.name,
-                    isInBubble: isInBubbleBasedOnMessage,
-                    todayTasks: todayTasks
-                )
+                // 通知設定が有効な場合のみ通知を送信
+                if notificationsEnabled {
+                    let todayTasks = getTasksDueUntilToday()
+                    notificationManager.setRoomStatusNotification(
+                        deviceName: device.name,
+                        isInBubble: isInBubbleBasedOnMessage,
+                        todayTasks: todayTasks
+                    )
+                }
                 
-                logger.info("iOSNotify受信 - 状態変化: \(device.name) - \(message)")
-                
-                // バックグラウンドモードで効率的な処理を実行
+                // フォアグラウンドまたはバックグラウンドでの適切な処理
                 if isBackgroundMode {
                     handleBackgroundSecureBubbleChange(isInBubble: isInBubbleBasedOnMessage)
                 }
-            } else {
-                logger.debug("iOSNotify受信 - 状態変化なし: \(device.name) - \(message)")
             }
         }
     }
     
     private func handleBackgroundSecureBubbleChange(isInBubble: Bool) {
-        logger.info("バックグラウンドでのSecure Bubble状態変化: \(isInBubble ? "内部" : "外部")")
-        
         // バックグラウンドでの軽量な処理のみ実行
         lastBackgroundUpdate = Date()
         
@@ -476,8 +506,16 @@ class UWBManager: NSObject, ObservableObject {
             isCurrentlyInBubble = isInSecureBubble
         }
         
-        // 状態が変化した場合のみ通知
-        if previousSecureBubbleStatus != isCurrentlyInBubble {
+        // 初回判定または状態が変化した場合に通知
+        let shouldNotify = previousSecureBubbleStatus == nil || previousSecureBubbleStatus != isCurrentlyInBubble
+        
+        if shouldNotify {
+            // フォアグラウンド時のシンプルログ
+            if !isBackgroundMode {
+                let screenTimeStatus = screenTimeManager?.isRestrictionEnabled == true ? "有効" : "無効"
+                logger.info("📍 距離: \(String(format: "%.2f", distance))m | Bubble: \(isCurrentlyInBubble ? "内部" : "外部") | ScreenTime: \(screenTimeStatus)")
+            }
+            
             DispatchQueue.main.async {
                 self.isInSecureBubble = isCurrentlyInBubble
             }
@@ -493,8 +531,6 @@ class UWBManager: NSObject, ObservableObject {
                     todayTasks: todayTasks
                 )
             }
-            
-            logger.info("Secure Bubble状態変化: \(device.name) - \(isCurrentlyInBubble ? "内部" : "外部") - 距離: \(distance)m")
         }
     }
     
@@ -680,6 +716,297 @@ class UWBManager: NSObject, ObservableObject {
         permissionTestSession = nil
     }
     
+    // MARK: - 再ペアリング処理管理
+    
+    private func startRepairProcess(for device: UWBDevice, error: Error) {
+        let deviceID = device.uniqueID
+        
+        // 再ペアリングが必要かエラー内容から判定
+        guard shouldAttemptRepair(for: error) else {
+            return
+        }
+        
+        // 既存のタイマーがあれば停止
+        stopRepairProcess(for: device)
+        
+        // 再試行回数を初期化（1台限定）
+        repairAttempts[deviceID] = 0
+        lastRepairTime = Date()
+        
+        DispatchQueue.main.async {
+            self.isRepairing = true
+            self.repairAttemptCount += 1
+        }
+        
+        // バックグラウンドモードの場合は単一デバイス変数に設定
+        if isBackgroundMode {
+            repairingDeviceID = deviceID
+        }
+        
+        // フォアグラウンドの場合は即座に再ペアリング試行（固定遅延）
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
+            self.attemptNISessionRepair(for: device)
+        }
+        
+        logger.info("🔄 再ペアリング開始: \(device.name)")
+    }
+    
+    private func shouldAttemptRepair(for error: Error) -> Bool {
+        let nsError = error as NSError
+        
+        // 再ペアリングを試行しないエラーコード
+        switch nsError.code {
+        case -5884: // NIERROR_USER_DID_NOT_ALLOW
+            return false // ユーザーが許可を拒否した場合は再試行しない
+        case -5886: // NIERROR_ACTIVE_SESSION_LIMIT_EXCEEDED
+            return true // セッション制限の場合は再試行する
+        case -5885: // NIERROR_RESOURCE_USAGE_TIMEOUT
+            return true // タイムアウトの場合は再試行する
+        case -1: // カスタムエラー（Bluetooth切断など）
+            return true
+        default:
+            return true // その他のエラーは再試行する
+        }
+    }
+    
+    private func attemptNISessionRepair(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // 設定データの確認
+        guard let configuration = self.accessoryConfigurations[deviceID] else {
+            stopRepairProcess(for: device)
+            return
+        }
+        
+        // デバイスの基本状態チェック
+        guard self.discoveredDevices.contains(where: { $0.uniqueID == deviceID }) else {
+            stopRepairProcess(for: device)
+            return
+        }
+        
+        let currentAttempt = repairAttempts[deviceID, default: 0] + 1
+        logger.info("🔄 再ペアリング試行 #\(currentAttempt): \(device.name)")
+        
+        // デバイスが切断されている場合は先にBluetooth再接続を試行
+        if device.peripheral.state != .connected {
+            centralManager?.connect(device.peripheral, options: nil)
+            // 再接続待ちのため、少し後に再ペアリングを再試行
+            scheduleNextRepairAttempt(for: device, delay: 5.0)
+            return
+        }
+        
+        // 既存のNISessionをクリーンアップ
+        if let existingSession = niSessions[deviceID] {
+            existingSession.invalidate()
+        }
+        
+        // NISessionの再作成を試行
+        let newSession = NISession()
+        newSession.delegate = self
+        niSessions[deviceID] = newSession
+        
+        // バックグラウンドモードの場合は特別な設定を適用
+        if self.isBackgroundMode {
+            setupSessionForBackgroundMode(newSession)
+        }
+        
+        // 設定でセッションを実行
+        do {
+            newSession.run(configuration)
+            
+            // 成功の可能性があるので、少し待ってから結果を確認
+            let verificationDelay: TimeInterval = self.isBackgroundMode ? 5.0 : 3.0
+            
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + verificationDelay) {
+                self.verifyRepairSuccess(for: device)
+            }
+        } catch let error {
+            scheduleNextRepairAttempt(for: device)
+        }
+    }
+    
+    private func setupSessionForBackgroundMode(_ session: NISession) {
+        // バックグラウンドモード用の最適化設定
+        logger.info("バックグラウンドモード用NISession設定")
+        // 必要に応じて特別な設定を追加
+    }
+    
+    private func verifyRepairSuccess(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // デバイス存在確認
+        guard self.discoveredDevices.contains(where: { $0.uniqueID == deviceID }) else {
+            stopRepairProcess(for: device)
+            return
+        }
+        
+        // セッションがアクティブで、デバイスが適切な状態かチェック
+        let sessionExists = self.niSessions[deviceID] != nil
+        let bluetoothConnected = device.peripheral.state == .connected
+        
+        if sessionExists && bluetoothConnected {
+            // 成功と判定
+            logger.info("✅ 再ペアリング成功: \(device.name)")
+            stopRepairProcess(for: device)
+            
+            DispatchQueue.main.async {
+                let shouldStop = self.isBackgroundMode ? self.repairAttempts.isEmpty : self.repairTimers.isEmpty
+                if shouldStop {
+                    self.isRepairing = false
+                }
+            }
+        } else {
+            // 失敗と判定、次の試行をスケジュール
+            scheduleNextRepairAttempt(for: device)
+        }
+    }
+    
+    private func scheduleNextRepairAttempt(for device: UWBDevice, delay: TimeInterval? = nil) {
+        let deviceID = device.uniqueID
+        let currentAttempts = repairAttempts[deviceID, default: 0] + 1
+        repairAttempts[deviceID] = currentAttempts
+        
+        // 最大試行回数をチェック（フォアグラウンドのみ）
+        if !self.isBackgroundMode {
+            guard currentAttempts < maxRepairAttempts else {
+                stopRepairProcess(for: device)
+                return
+            }
+        }
+        
+        // 指数バックオフで待機時間を計算（バックグラウンドでは長めの間隔）
+        let backoffMultiplier = self.isBackgroundMode ? 2.0 : 1.0
+        let calculatedDelay = baseRepairInterval * pow(2.0, Double(currentAttempts - 1)) * backoffMultiplier
+        
+        // バックグラウンドでは最大間隔を長く設定（省電力のため）
+        let effectiveMaxInterval = self.isBackgroundMode ? 300.0 : maxRepairInterval  // BG: 5分, FG: 60秒
+        let waitTime = delay ?? min(effectiveMaxInterval, calculatedDelay)
+        
+        // バックグラウンドでのタイマー実行を改善
+        if self.isBackgroundMode {
+            // バックグラウンドタスクとして実行
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + waitTime) {
+                self.attemptNISessionRepair(for: device)
+            }
+        } else {
+            // フォアグラウンドでは通常のタイマーを使用
+            let timer = Timer.scheduledTimer(withTimeInterval: waitTime, repeats: false) { _ in
+                self.attemptNISessionRepair(for: device)
+            }
+            repairTimers[deviceID] = timer
+        }
+    }
+    
+    private func stopRepairProcess(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // タイマーを停止（フォアグラウンドの場合のみ）
+        if !isBackgroundMode {
+            repairTimers[deviceID]?.invalidate()
+            repairTimers.removeValue(forKey: deviceID)
+        }
+        
+        // バックグラウンド再ペアリング対象からも削除（1台限定）
+        if repairingDeviceID == deviceID {
+            repairingDeviceID = nil
+        }
+        
+        // 試行回数をリセット
+        repairAttempts.removeValue(forKey: deviceID)
+        
+        // 全ての再ペアリングが終了したかチェック（1台限定）
+        DispatchQueue.main.async {
+            let hasForegroundRepairs = !self.repairTimers.isEmpty
+            let hasBackgroundRepairs = self.repairingDeviceID != nil
+            
+            if !hasForegroundRepairs && !hasBackgroundRepairs {
+                self.isRepairing = false
+            }
+        }
+    }
+    
+    private func stopAllRepairProcesses() {
+        // 1台限定の場合、接続済みデバイスがあればそれを停止
+        if let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) {
+            stopRepairProcess(for: connectedDevice)
+        }
+        
+        // 全ての再ペアリング関連データをクリア（1台限定）
+        repairingDeviceID = nil
+        lastRepairTime = Date.distantPast
+        
+        DispatchQueue.main.async {
+            self.isRepairing = false
+            self.repairAttemptCount = 0
+        }
+    }
+    
+    // MARK: - TaskManager連携
+    
+    func setTaskManager(_ taskManager: EventKitTaskManager) {
+        self.taskManager = taskManager
+        logger.info("📱 TaskManager連携完了")
+    }
+    
+    func forceNISessionCheck() {
+        guard let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) else {
+            return
+        }
+        
+        checkAndRepairNISessionIfNeeded(for: connectedDevice)
+    }
+    
+    func forceRepairNISession() {
+        guard let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) else {
+            return
+        }
+        
+        let repairError = NSError(domain: "UWBManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "手動修復実行"])
+        startRepairProcess(for: connectedDevice, error: repairError)
+        
+        logger.info("🔄 手動修復実行")
+    }
+    
+    // デバッグ情報取得用のメソッド
+    func hasNISession(for deviceID: Int) -> Bool {
+        return niSessions[deviceID] != nil
+    }
+    
+    func hasConfiguration(for deviceID: Int) -> Bool {
+        return accessoryConfigurations[deviceID] != nil
+    }
+    
+    private func adjustRepairProcessesForForeground() {
+        // フォアグラウンドモードでは再ペアリング間隔を短縮（1台限定）
+        for (deviceID, timer) in repairTimers {
+            timer.invalidate()  // 既存のタイマーを停止
+            
+            if let device = findDevice(uniqueID: deviceID) {
+                // より短い間隔で再スケジュール
+                let shortDelay: TimeInterval = 1.0
+                
+                let newTimer = Timer.scheduledTimer(withTimeInterval: shortDelay, repeats: false) { _ in
+                    self.attemptNISessionRepair(for: device)
+                }
+                repairTimers[deviceID] = newTimer
+            }
+        }
+    }
+    
+    private func adjustRepairProcessesForBackground() {
+        // バックグラウンドモードでは再ペアリング間隔を延長（1台限定）
+        logger.info("バックグラウンドモード用に再ペアリング処理を調整")
+        
+        // すべての再ペアリングプロセスで次回の間隔を長くする
+        // （実際の調整は次回の scheduleNextRepairAttempt で行われる）
+    }
+    
     // MARK: - バックグラウンド処理管理
     
     private func setupBackgroundProcessing() {
@@ -722,11 +1049,14 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     @objc private func appDidEnterBackground() {
+        logger.info("🟡 アプリがバックグラウンドに移行開始")
+        
         DispatchQueue.main.async {
             self.isBackgroundMode = true
+            self.logger.info("🟢 isBackgroundMode = true に設定完了")
         }
         
-        logger.info("アプリがバックグラウンドに移行")
+        logger.info("🟢 アプリがバックグラウンドに移行完了")
         
         // バックグラウンドタスクの開始
         beginBackgroundTask()
@@ -739,11 +1069,14 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     @objc private func appWillEnterForeground() {
+        logger.info("🟡 アプリがフォアグラウンドに復帰開始")
+        
         DispatchQueue.main.async {
             self.isBackgroundMode = false
+            self.logger.info("🟢 isBackgroundMode = false に設定完了")
         }
         
-        logger.info("アプリがフォアグラウンドに復帰")
+        logger.info("🟢 アプリがフォアグラウンドに復帰完了")
         
         // フォアグラウンド用の処理に復帰
         transitionToForegroundMode()
@@ -780,30 +1113,45 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     private func transitionToBackgroundMode() {
-        logger.info("バックグラウンドモードに移行")
+        logger.info("📱 バックグラウンドモードに移行")
         
-        // フォアグラウンド専用の処理を停止
+        // フォアグラウンド処理の停止
         stopScanning()
         
-        // バックグラウンド用ハートビートタイマーの開始
-        startBackgroundHeartbeat()
+        // フォアグラウンド再ペアリングプロセスを停止（1台限定）
+        for timer in repairTimers.values {
+            timer.invalidate()
+        }
+        repairTimers.removeAll()
         
-        // 接続状態の保存
-        saveConnectionStateForBackground()
+        // バックグラウンド処理の開始
+        startBackgroundHeartbeat()
         
         DispatchQueue.main.async {
             self.backgroundSessionActive = true
         }
+        
+        // リソースの最適化
+        optimizeForBackgroundMode()
     }
     
     private func transitionToForegroundMode() {
-        logger.info("フォアグラウンドモードに復帰")
+        logger.info("📱 フォアグラウンドモードに復帰")
         
         // ハートビートタイマーの停止
         stopBackgroundHeartbeat()
         
+        // バックグラウンド再ペアリング対象をフォアグラウンド処理に移行（1台限定）
+        transferBackgroundRepairToForeground()
+        
         // 接続状態の復元
         restoreConnectionStateFromBackground()
+        
+        // NISessionの状態確認と復旧
+        checkAndRestoreNISessionsOnForeground()
+        
+        // 再ペアリング処理の調整（フォアグラウンドモード用に間隔を短縮）
+        adjustRepairProcessesForForeground()
         
         // 自動再接続の実行
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -812,6 +1160,58 @@ class UWBManager: NSObject, ObservableObject {
         
         DispatchQueue.main.async {
             self.backgroundSessionActive = false
+        }
+    }
+    
+    private func transferBackgroundRepairToForeground() {
+        guard let deviceID = repairingDeviceID else {
+            return
+        }
+        
+        guard let device = findDevice(uniqueID: deviceID) else {
+            repairingDeviceID = nil
+            return
+        }
+        
+        logger.info("🔄 バックグラウンド→フォアグラウンド移行: \(device.name)")
+        
+        // フォアグラウンドでより短い間隔でスケジュール（固定遅延）
+        let shortDelay: TimeInterval = 1.0
+        
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + shortDelay) {
+            self.attemptNISessionRepair(for: device)
+        }
+        
+        // バックグラウンド再ペアリング対象をクリア
+        repairingDeviceID = nil
+    }
+    
+    private func checkAndRestoreNISessionsOnForeground() {
+        guard let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) else {
+            return
+        }
+        
+        let deviceID = connectedDevice.uniqueID
+        let hasNISession = niSessions[deviceID] != nil
+        let hasConfiguration = accessoryConfigurations[deviceID] != nil
+        
+        // NISessionが不足している場合の復旧処理
+        if !hasNISession && hasConfiguration && connectedDevice.peripheral.state == .connected {
+            logger.info("🔄 フォアグラウンド復帰時修復: \(connectedDevice.name)")
+            
+            // 固定遅延で復旧処理を実行
+            let delay: TimeInterval = 2.0
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + delay) {
+                self.attemptNISessionRepair(for: connectedDevice)
+            }
+        } else if connectedDevice.status == .ranging && connectedDevice.distance == nil {
+            // 距離データが長期間更新されていない場合
+            let delay: TimeInterval = 3.0
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + delay) {
+                self.attemptNISessionRepair(for: connectedDevice)
+            }
         }
     }
     
@@ -835,70 +1235,134 @@ class UWBManager: NSObject, ObservableObject {
     }
     
     private func performBackgroundHeartbeat() {
-        let elapsedTimeString: String
-        if let startTime = backgroundHeartbeatStartTime {
-            let elapsedTime = Date().timeIntervalSince(startTime)
-            let minutes = Int(elapsedTime) / 60
-            let seconds = Int(elapsedTime) % 60
-            elapsedTimeString = String(format: "(%d:%02d経過)", minutes, seconds)
-        } else {
-            elapsedTimeString = ""
+        guard isBackgroundMode else { 
+            return 
         }
         
-        logger.info("バックグラウンドハートビート実行\(elapsedTimeString)")
+        // ハートビート経過時間計算
+        let elapsed = backgroundHeartbeatStartTime?.timeIntervalSinceNow ?? 0
+        let elapsedTimeString = String(format: " (%.1f秒経過)", abs(elapsed))
         
-        // 接続済みデバイスの状態確認
-        let connectedDevices = discoveredDevices.filter { 
+        // バックグラウンド時のシンプルログ
+        logger.info("🕒 ハートビート\(elapsedTimeString)")
+        
+        // 接続済みデバイスの確認
+        if let connectedDevice = discoveredDevices.first(where: { 
             $0.status == .connected || $0.status == .paired || $0.status == .ranging
-        }
-        
-        for device in connectedDevices {
+        }) {
+            
             // 軽量なハートビートメッセージを送信
-            if device.peripheral.state == .connected {
+            if connectedDevice.peripheral.state == .connected {
                 let heartbeatMessage = Data([MessageId.getReserved.rawValue])
-                sendDataToDevice(heartbeatMessage, device: device)
+                sendDataToDevice(heartbeatMessage, device: connectedDevice)
+                
+                // NISessionの状態確認と再ペアリング判定
+                checkAndRepairNISessionIfNeeded(for: connectedDevice)
+                
+                // NIセッションの有効性を確認
+                let hasActiveNISession = niSessions[connectedDevice.uniqueID] != nil
+                logger.info("📡 NIセッション: \(hasActiveNISession ? "有効" : "無効") | Bubble: \(self.isInSecureBubble ? "内部" : "外部")")
             }
         }
+        
+        // バックグラウンド再ペアリング処理（1台限定）
+        processBackgroundRepair()
         
         lastBackgroundUpdate = Date()
     }
     
-    private func saveConnectionStateForBackground() {
-        let connectedDeviceStates = discoveredDevices.filter { 
-            $0.status == .connected || $0.status == .paired || $0.status == .ranging
-        }.map { device in
-            [
-                "identifier": device.peripheral.identifier.uuidString,
-                "uniqueID": device.uniqueID,
-                "name": device.name,
-                "status": device.status.rawValue
-            ]
+    private func checkAndRepairNISessionIfNeeded(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // NISessionが存在するか確認
+        let hasNISession = niSessions[deviceID] != nil
+        let shouldHaveNISession = device.status == .ranging || device.status == .paired
+        
+        // NISessionが必要なのに存在しない場合、または距離データが長期間更新されていない場合
+        let shouldRepair = (!hasNISession && shouldHaveNISession) ||
+                          (device.status == .ranging && device.distance == nil && 
+                           Date().timeIntervalSince(device.lastUpdate) > 60.0)  // 60秒以上距離更新なし
+        
+        if shouldRepair {
+            // バックグラウンド再ペアリング対象に設定（1台限定）
+            repairingDeviceID = deviceID
+        }
+    }
+    
+    private func processBackgroundRepair() {
+        guard let deviceID = repairingDeviceID else {
+            return
         }
         
-        UserDefaults.standard.set(connectedDeviceStates, forKey: "background_connected_devices")
-        logger.info("バックグラウンド用接続状態保存: \(connectedDeviceStates.count)台")
+        guard let device = findDevice(uniqueID: deviceID) else {
+            repairingDeviceID = nil
+            return
+        }
+        
+        let currentTime = Date()
+        let minIntervalBetweenAttempts: TimeInterval = 60.0  // 1分間隔
+        let timeSinceLastAttempt = currentTime.timeIntervalSince(lastRepairTime)
+        
+        if timeSinceLastAttempt >= minIntervalBetweenAttempts {
+            // 実行時刻を更新
+            lastRepairTime = currentTime
+            
+            // 再ペアリング実行
+            attemptNISessionRepair(for: device)
+            
+            // 成功・失敗に関わらず対象をクリア（次回ハートビートで再評価）
+            repairingDeviceID = nil
+        }
+    }
+    
+    private func saveConnectionStateForBackground() {
+        guard let connectedDevice = discoveredDevices.first(where: { 
+            $0.status == .connected || $0.status == .paired || $0.status == .ranging
+        }) else {
+            logger.info("バックグラウンド用接続状態保存: 接続済みデバイスなし")
+            UserDefaults.standard.removeObject(forKey: "background_connected_device")
+            return
+        }
+        
+        let deviceState: [String: Any] = [
+            "identifier": connectedDevice.peripheral.identifier.uuidString,
+            "uniqueID": connectedDevice.uniqueID,
+            "name": connectedDevice.name,
+            "status": connectedDevice.status.rawValue
+        ]
+        
+        UserDefaults.standard.set(deviceState, forKey: "background_connected_device")
+        logger.info("バックグラウンド用接続状態保存: \(connectedDevice.name)")
     }
     
     private func restoreConnectionStateFromBackground() {
-        if let savedStates = UserDefaults.standard.array(forKey: "background_connected_devices") as? [[String: Any]] {
-            logger.info("バックグラウンド用接続状態復元: \(savedStates.count)台")
-            
-            for state in savedStates {
-                if let _ = state["identifier"] as? String,
-                   let uniqueID = state["uniqueID"] as? Int,
-                   let _ = state["name"] as? String {
-                    
-                    // デバイスが現在のリストに存在するかチェック
-                    if let existingDevice = discoveredDevices.first(where: { $0.uniqueID == uniqueID }) {
-                        // 状態を更新
-                        if existingDevice.peripheral.state == .connected {
-                            DispatchQueue.main.async {
-                                existingDevice.status = .connected
-                            }
-                        }
-                    }
+        guard let savedState = UserDefaults.standard.dictionary(forKey: "background_connected_device") as? [String: Any] else {
+            logger.info("バックグラウンド用接続状態復元: 保存された状態なし")
+            return
+        }
+        
+        guard let _ = savedState["identifier"] as? String,
+              let uniqueID = savedState["uniqueID"] as? Int,
+              let name = savedState["name"] as? String else {
+            logger.info("バックグラウンド用接続状態復元: 不正なデータ")
+            return
+        }
+        
+        logger.info("バックグラウンド用接続状態復元: \(name)")
+        
+        // デバイスが現在のリストに存在するかチェック
+        if let existingDevice = discoveredDevices.first(where: { $0.uniqueID == uniqueID }) {
+            // 状態を更新
+            if existingDevice.peripheral.state == .connected {
+                DispatchQueue.main.async {
+                    existingDevice.status = .connected
                 }
+                logger.info("デバイス状態復元完了: \(existingDevice.name)")
+            } else {
+                logger.info("Bluetooth未接続のため状態復元スキップ: \(existingDevice.name)")
             }
+        } else {
+            logger.info("デバイスが現在のリストに存在しない: \(name)")
         }
     }
     
@@ -992,9 +1456,12 @@ class UWBManager: NSObject, ObservableObject {
         logger.info("ログクリーンアップ実行")
     }
     
+
+    
     private func cleanupBackgroundProcessing() {
         stopBackgroundHeartbeat()
         endBackgroundTask()
+        stopAllRepairProcesses()  // 再ペアリングプロセスも停止
         
         // 通知の監視を停止
         NotificationCenter.default.removeObserver(self)
@@ -1036,9 +1503,11 @@ extension UWBManager: CBCentralManagerDelegate {
         switch central.state {
         case .poweredOn:
             logger.info("Bluetooth準備完了")
-            // 自動接続を開始
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.startAutoReconnection()
+            // 自動接続を開始（フォアグラウンドのみ）
+            if !isBackgroundMode {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.startAutoReconnection()
+                }
             }
         case .poweredOff:
             logger.error("Bluetooth無効")
@@ -1122,7 +1591,7 @@ extension UWBManager: CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        logger.info("デバイス切断: \(peripheral.name ?? "Unknown")")
+        logger.info("デバイス切断: \(peripheral.name ?? "Unknown") - エラー: \(error?.localizedDescription ?? "なし")")
         
         if let device = findDevice(peripheral: peripheral) {
             DispatchQueue.main.async {
@@ -1130,6 +1599,19 @@ extension UWBManager: CBCentralManagerDelegate {
                 device.distance = nil
             }
             updateConnectionStatus()
+            
+            // NISessionも無効化されている可能性があるため、再ペアリングを開始
+            if niSessions[device.uniqueID] != nil {
+                logger.info("デバイス切断により再ペアリングを開始: \(device.name)")
+                
+                // NISessionを明示的に無効化
+                niSessions[device.uniqueID]?.invalidate()
+                niSessions.removeValue(forKey: device.uniqueID)
+                
+                // 再ペアリングプロセスを開始（エラー作成）
+                let disconnectionError = NSError(domain: "UWBManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bluetooth切断による再ペアリング"])
+                startRepairProcess(for: device, error: disconnectionError)
+            }
         }
     }
 }
@@ -1255,6 +1737,7 @@ extension UWBManager: NISessionDelegate {
     func session(_ session: NISession, didUpdate nearbyObjects: [NINearbyObject]) {
         // 許可テスト用セッションの場合
         if session == permissionTestSession {
+            logger.info("🔵 許可テスト用セッションの距離更新")
             handleNIPermissionGranted()
             return
         }
@@ -1266,7 +1749,9 @@ extension UWBManager: NISessionDelegate {
         }
         
         guard let accessory = nearbyObjects.first,
-              let distance = accessory.distance else { return }
+              let distance = accessory.distance else { 
+            return 
+        }
         
         // セッションに対応するデバイスを見つける
         var targetDevice: UWBDevice?
@@ -1277,7 +1762,9 @@ extension UWBManager: NISessionDelegate {
             }
         }
         
-        guard let device = targetDevice else { return }
+        guard let device = targetDevice else { 
+            return 
+        }
         
         DispatchQueue.main.async {
             device.distance = distance
@@ -1287,8 +1774,6 @@ extension UWBManager: NISessionDelegate {
         
         // Secure bubble判定を実行
         checkSecureBubbleStatus(distance: distance, device: device)
-        
-        logger.info("距離更新: \(device.name) - \(distance)m")
     }
     
     func session(_ session: NISession, didRemove nearbyObjects: [NINearbyObject], reason: NINearbyObject.RemovalReason) {
@@ -1317,8 +1802,6 @@ extension UWBManager: NISessionDelegate {
     }
     
     func session(_ session: NISession, didInvalidateWith error: Error) {
-        logger.error("NISession無効化: \(error)")
-        
         // エラーハンドリング
         handleNIError(error)
         
@@ -1328,11 +1811,10 @@ extension UWBManager: NISessionDelegate {
             return
         }
         
-        // セッションに対応するデバイスを見つけて削除
+        // セッションに対応するデバイスを見つけて処理
         for (deviceID, niSession) in niSessions {
             if niSession == session {
                 niSessions.removeValue(forKey: deviceID)
-                accessoryConfigurations.removeValue(forKey: deviceID)
                 
                 // デバイス状態をリセット
                 if let device = findDevice(uniqueID: deviceID) {
@@ -1343,6 +1825,9 @@ extension UWBManager: NISessionDelegate {
                         }
                     }
                     updateConnectionStatus()
+                    
+                    // 再ペアリング処理を開始
+                    startRepairProcess(for: device, error: error)
                 }
                 break
             }
@@ -1355,7 +1840,8 @@ struct UWBSettingsView: View {
     @State private var showingNIPermissionAlert = false
     
     var body: some View {
-        VStack(spacing: 20) {
+        ScrollView {
+            VStack(spacing: 20) {
                 // ヘッダー
                 VStack(spacing: 16) {
                     Image(systemName: "wave.3.right.circle")
@@ -1366,7 +1852,7 @@ struct UWBSettingsView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
                     
-                    Text("DWM3001CDKデバイスとの通信とリアルタイム距離測定")
+                    Text("DWM3001CDKデバイス（1台）との通信とリアルタイム距離測定")
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -1428,6 +1914,18 @@ struct UWBSettingsView: View {
                                 Spacer()
                             }
                         }
+                        
+                        // 再ペアリング状態表示
+                        if uwbManager.isRepairing {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Text("再ペアリング中... (試行回数: \(uwbManager.repairAttemptCount))")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                                Spacer()
+                            }
+                        }
                     }
                     .padding(.horizontal)
                 }
@@ -1486,6 +1984,25 @@ struct UWBSettingsView: View {
                 .disabled(uwbManager.bluetoothState != .poweredOn || uwbManager.isConnecting || uwbManager.hasConnectedDevices)
                 .padding(.horizontal)
                 
+                // 接続解除ボタン（接続済みデバイスがある場合のみ表示）
+                if uwbManager.hasConnectedDevices {
+                    Button(action: {
+                        uwbManager.disconnectAllDevices()
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                            Text("デバイス切断")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.red)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .padding(.horizontal)
+                }
+                
                 // エラー表示
                 if let error = uwbManager.scanningError {
                     Text(error)
@@ -1516,22 +2033,94 @@ struct UWBSettingsView: View {
                 // デバイスリスト
                 if !uwbManager.discoveredDevices.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("発見されたデバイス")
-                            .font(.headline)
-                            .padding(.horizontal)
-                        
-                        ScrollView {
-                            LazyVStack(spacing: 8) {
-                                ForEach(uwbManager.discoveredDevices) { device in
-                                    DeviceRowView(device: device, uwbManager: uwbManager)
+                        HStack {
+                            Text("UWBデバイス")
+                                .font(.headline)
+                            
+                            Spacer()
+                            
+                            // デバッグ用：手動NISession確認ボタン
+                            if uwbManager.hasConnectedDevices {
+                                HStack(spacing: 8) {
+                                    Button("状態確認") {
+                                        uwbManager.forceNISessionCheck()
+                                    }
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.gray.opacity(0.3))
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    
+                                    Button("修復実行") {
+                                        uwbManager.forceRepairNISession()
+                                    }
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.orange.opacity(0.7))
+                                    .foregroundColor(.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
                                 }
                             }
+                        }
+                        .padding(.horizontal)
+                        
+                        // デバッグ情報表示
+                        if uwbManager.hasConnectedDevices {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("🔍 診断情報")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                if let connectedDevice = uwbManager.discoveredDevices.first(where: { 
+                                    $0.status == .connected || $0.status == .paired || $0.status == .ranging
+                                }) {
+                                    let deviceID = connectedDevice.uniqueID
+                                    let hasNISession = uwbManager.hasNISession(for: deviceID)
+                                    let hasConfiguration = uwbManager.hasConfiguration(for: deviceID)
+                                    
+                                    HStack {
+                                        Text("• NISession:")
+                                        Text(hasNISession ? "作成済み" : "なし")
+                                            .foregroundColor(hasNISession ? .green : .red)
+                                    }
+                                    .font(.caption)
+                                    
+                                    HStack {
+                                        Text("• 設定データ:")
+                                        Text(hasConfiguration ? "受信済み" : "なし")
+                                            .foregroundColor(hasConfiguration ? .green : .red)
+                                    }
+                                    .font(.caption)
+                                    
+                                    HStack {
+                                        Text("• Bluetooth状態:")
+                                        Text("\(connectedDevice.peripheral.state.rawValue)")
+                                            .foregroundColor(connectedDevice.peripheral.state == .connected ? .green : .orange)
+                                    }
+                                    .font(.caption)
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(8)
                             .padding(.horizontal)
                         }
+                        
+                        // デバイスリスト（ScrollViewは除去してLazyVStackのみ使用）
+                        LazyVStack(spacing: 8) {
+                            ForEach(uwbManager.discoveredDevices) { device in
+                                DeviceRowView(device: device, uwbManager: uwbManager)
+                            }
+                        }
+                        .padding(.horizontal)
                     }
                 }
                 
-            Spacer()
+                // 下部のスペースを追加
+                Spacer(minLength: 50)
+            }
+            .padding(.bottom, 20)
         }
         .navigationTitle("UWB設定")
         .navigationBarTitleDisplayMode(.inline)
@@ -1620,9 +2209,22 @@ struct DeviceRowView: View {
                             .foregroundColor(.blue)
                     }
                 } else if device.status == DeviceStatus.paired || device.status == DeviceStatus.connected {
-                    Text("接続済み")
+                    VStack(spacing: 4) {
+                        Text("接続済み")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        // 個別切断ボタン
+                        Button("切断") {
+                            uwbManager.disconnectFromDevice(device)
+                        }
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
                 } else if device.status == DeviceStatus.discovered {
                     Button("接続") {
                         uwbManager.connectToDevice(device)

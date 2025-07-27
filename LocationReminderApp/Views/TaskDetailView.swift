@@ -26,7 +26,7 @@ struct TaskDetailView: View {
                             TextField("タスク名", text: $editedTitle)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
-                                .background(Color(.systemGray6))
+                                .background(Color(.systemGray5))
                                 .cornerRadius(12)
                         }
                         
@@ -55,7 +55,7 @@ struct TaskDetailView: View {
                                             .background(
                                                 editedPriority == priorityOption
                                                     ? priorityOption.color
-                                                    : Color(.systemGray6)
+                                                    : Color(.systemGray5)
                                             )
                                             .cornerRadius(16)
                                         }
@@ -74,14 +74,14 @@ struct TaskDetailView: View {
                                 TextField("メモ", text: $editedMemo, axis: .vertical)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
-                                    .background(Color(.systemGray6))
+                                    .background(Color(.systemGray5))
                                     .cornerRadius(12)
                                     .lineLimit(3...6)
                             } else {
                                 TextField("メモ", text: $editedMemo)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
-                                    .background(Color(.systemGray6))
+                                    .background(Color(.systemGray5))
                                     .cornerRadius(12)
                             }
                         }
@@ -139,7 +139,7 @@ struct TaskDetailView: View {
                                             .background(
                                                 editedRecurrenceType == recurrenceOption
                                                     ? Color.blue
-                                                    : Color(.systemGray6)
+                                                    : Color(.systemGray5)
                                             )
                                             .cornerRadius(16)
                                         }
