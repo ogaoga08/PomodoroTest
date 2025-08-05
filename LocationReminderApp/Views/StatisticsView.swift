@@ -39,7 +39,7 @@ struct StatisticsView: View {
                 .padding(.bottom, 20)
             }
             .navigationTitle("統計")
-            .navigationBarTitleDisplayMode(.inline)           
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -417,7 +417,7 @@ struct WeeklyStatRow: View {
                         .foregroundColor(.blue)
                     Text("作成")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
                 
                 VStack {
@@ -427,7 +427,7 @@ struct WeeklyStatRow: View {
                         .foregroundColor(.red)
                     Text("期限超過")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
                 
                 Spacer()
@@ -489,7 +489,7 @@ struct MonthlyStatRow: View {
                         .foregroundColor(.red)
                     Text("期限超過")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.gray)
                 }
                 
                 Spacer()

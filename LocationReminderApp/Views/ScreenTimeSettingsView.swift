@@ -220,11 +220,11 @@ class ScreenTimeManager: ObservableObject {
         if hasWebDomainsSelected {
             store.shield.webDomains = selection.webDomainTokens
             print("🌐 Webドメイン制限を設定")
+            
+            // 選択したWebドメインのみをブロック（.all()を削除）
+            // store.webContent.blockedByFilter = .all() // この行を削除して選択したドメインのみ制限
+            print("🚫 選択されたWebドメインのみ制限を適用")
         }
-        
-        // Webコンテンツもブロックしたい場合
-        store.webContent.blockedByFilter = .all()
-        print("🚫 Webコンテンツフィルタを設定")
         
         DispatchQueue.main.async {
             self.isRestrictionEnabled = true
@@ -506,6 +506,16 @@ struct ScreenTimeSettingsView: View {
             
             // 選択を永続化
             screenTimeManager.activitySelectionStore.saveSelection()
+            
+            // UWB連動が有効でSecure Bubble内にいる場合、即座に制限を適用
+            if screenTimeManager.isUWBLinked && uwbManager.isInSecureBubble {
+                print("🔄 Secure Bubble内のため、即座に制限を更新")
+                screenTimeManager.enableRestrictionForSecureBubble()
+            } else if screenTimeManager.isUWBLinked && !uwbManager.isInSecureBubble {
+                print("🔄 Secure Bubble外のため、制限を無効化")
+                screenTimeManager.disableRestrictionForSecureBubble()
+            }
+            print("=======================\n")
         }
         .onChange(of: showingAppSelection) { newValue in
             if newValue {
