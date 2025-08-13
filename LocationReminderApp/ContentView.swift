@@ -118,6 +118,8 @@ struct ContentView: View {
                                          .swipeActions(edge: .leading) {
                                              Button("完了") {
                                                  taskManager.completeTask(task)
+                                                 // タスク完了後にScreen Time制限を再評価
+                                                 screenTimeManager.handleTaskCompletion()
                                              }
                                              .tint(.green)
                                          }
@@ -149,6 +151,8 @@ struct ContentView: View {
                                         .swipeActions(edge: .leading) {
                                             Button("完了") {
                                                 taskManager.completeTask(task)
+                                                // タスク完了後にScreen Time制限を再評価
+                                                screenTimeManager.handleTaskCompletion()
                                             }
                                             .tint(.green)
                                         }
@@ -350,6 +354,9 @@ struct ContentView: View {
             // UWBManagerにTaskManagerとScreenTimeManagerの参照を設定
             uwbManager.taskManager = taskManager
             uwbManager.screenTimeManager = screenTimeManager
+            // ScreenTimeManagerにTaskManagerとUWBManagerの参照を設定
+            screenTimeManager.taskManager = taskManager
+            screenTimeManager.uwbManager = uwbManager
         }
         .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
             // UWB状態が変化してから2秒待って処理を実行（チャタリング防止）
@@ -393,6 +400,9 @@ struct ContentView: View {
             taskManager.completeTask(task)
             pendingCompletions.removeValue(forKey: task.id)
             temporaryCompletedTasks.remove(task.id)
+            
+            // タスク完了後にScreen Time制限を再評価
+            screenTimeManager.handleTaskCompletion()
         }
         
         pendingCompletions[task.id] = timer

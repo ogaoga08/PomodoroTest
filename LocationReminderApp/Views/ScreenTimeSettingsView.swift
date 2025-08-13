@@ -98,6 +98,15 @@ class ScreenTimeManager: ObservableObject {
     @Published var isUWBLinked = true
     @Published var authorizationStatus = "未認証"
     
+    // TaskManagerへの参照を追加
+    weak var taskManager: TaskManager?
+    
+    // UWBManagerへの参照を追加
+    weak var uwbManager: UWBManager?
+    
+    // タスク時刻監視用タイマー
+    private var taskTimeMonitorTimer: Timer?
+    
     private let authorizationCenter = AuthorizationCenter.shared
     private let store = ManagedSettingsStore()
     
@@ -107,12 +116,15 @@ class ScreenTimeManager: ObservableObject {
     init() {
         checkAuthorizationStatus()
         setupShieldActionNotifications()
+        startTaskTimeMonitoring()
         
         // 初回起動時に自動的に認証ダイアログを表示
         if authorizationCenter.authorizationStatus == .notDetermined {
             requestAuthorization()
         }
     }
+    
+
     
     // 認証状態を確認
     private func checkAuthorizationStatus() {
@@ -248,11 +260,87 @@ class ScreenTimeManager: ObservableObject {
         }
     }
     
-    // Secure Bubble内での自動制限有効化
+    // 当日のタスクを取得
+    private func getTodayTasks() -> [TaskItem] {
+        guard let taskManager = taskManager else { return [] }
+        let calendar = Calendar.current
+        return taskManager.getParentTasks().filter { task in
+            calendar.isDateInToday(task.dueDate) || task.dueDate < calendar.startOfDay(for: Date())
+        }
+    }
+    
+    // 現在時刻以降に制限すべきタスクがあるかチェック
+    private func shouldEnableRestrictionBasedOnTasks() -> Bool {
+        let todayTasks = getTodayTasks()
+        let now = Date()
+        let calendar = Calendar.current
+        
+        print("\n=== 🕒 タスク時刻条件チェック ===")
+        print("📅 当日のタスク総数: \(todayTasks.count)")
+        
+        // 当日のタスクがない場合は制限しない
+        guard !todayTasks.isEmpty else { 
+            print("❌ 当日のタスクなし - 制限不要")
+            print("===============================\n")
+            return false 
+        }
+        
+        // 未完了のタスクのみをチェック対象とする
+        let incompleteTasks = todayTasks.filter { !$0.isCompleted }
+        print("📊 未完了タスク数: \(incompleteTasks.count)")
+        
+        guard !incompleteTasks.isEmpty else {
+            print("✅ 未完了タスクなし - 制限不要")
+            print("===============================\n")
+            return false
+        }
+        
+        // 時刻が設定されているタスクをチェック
+        let tasksWithTime = incompleteTasks.filter { $0.hasTime }
+        print("⏰ 時刻設定タスク数: \(tasksWithTime.count)")
+        
+        if !tasksWithTime.isEmpty {
+            // 時刻設定されたタスクがある場合、タスク時刻が現在時刻以前（つまり時刻が来た）のタスクがあるかチェック
+            let activeTasksToday = tasksWithTime.filter { task in
+                task.dueDate <= now
+            }
+            print("🔥 時刻が到来したタスク数: \(activeTasksToday.count)")
+            
+            if !activeTasksToday.isEmpty {
+                print("✅ 制限すべきタスクあり（時刻到来済み）")
+                for task in activeTasksToday {
+                    let timeStr = DateFormatter.localizedString(from: task.dueDate, dateStyle: .none, timeStyle: .short)
+                    print("  - \(task.title) (\(timeStr)) - 時刻到来済み")
+                }
+            } else {
+                print("❌ まだ時刻が来ていないタスクのみ - 制限不要")
+                for task in tasksWithTime {
+                    let timeStr = DateFormatter.localizedString(from: task.dueDate, dateStyle: .none, timeStyle: .short)
+                    print("  - \(task.title) (\(timeStr)) - まだ時刻前")
+                }
+            }
+            print("===============================\n")
+            return !activeTasksToday.isEmpty
+        } else {
+            // 時刻設定されていないタスクのみの場合、未完了タスクがあれば制限
+            print("✅ 時刻未設定の未完了タスクあり - 制限必要")
+            print("===============================\n")
+            return true
+        }
+    }
+    
+    // Secure Bubble内での自動制限有効化（新しい条件付き）
     func enableRestrictionForSecureBubble() {
         guard isUWBLinked else { return }
-        print("\n🔵 UWB Secure Bubble内 - 制限有効化")
-        enableRestriction()
+        
+        // 新しい条件：当日のタスクがあり、かつタスクの時刻以降である場合のみ制限
+        if shouldEnableRestrictionBasedOnTasks() {
+            print("\n🔵 UWB Secure Bubble内 + 当日タスクあり - 制限有効化")
+            enableRestriction()
+        } else {
+            print("\n⚪ UWB Secure Bubble内だが当日タスクなし/時刻前 - 制限無効")
+            disableRestriction()
+        }
     }
     
     // Secure Bubble外での自動制限無効化
@@ -260,6 +348,67 @@ class ScreenTimeManager: ObservableObject {
         guard isUWBLinked else { return }
         print("\n🔴 UWB Secure Bubble外 - 制限無効化")
         disableRestriction()
+    }
+    
+    // タスク完了時に制限を解除
+    func handleTaskCompletion() {
+        guard isUWBLinked && isAuthorized else { 
+            print("⚠️ タスク完了処理スキップ: UWB連動無効またはScreen Time未認証")
+            return 
+        }
+        
+        print("\n=== 📋 タスク完了時の制限チェック ===")
+        let todayTasks = getTodayTasks()
+        let incompleteTasks = todayTasks.filter { !$0.isCompleted }
+        
+        print("📊 当日のタスク総数: \(todayTasks.count)")
+        print("📊 未完了タスク数: \(incompleteTasks.count)")
+        print("📊 現在の制限状態: \(isRestrictionEnabled ? "有効" : "無効")")
+        
+        if !incompleteTasks.isEmpty {
+            print("📝 未完了タスク一覧:")
+            for task in incompleteTasks {
+                let timeInfo = task.hasTime ? "時刻: \(DateFormatter.localizedString(from: task.dueDate, dateStyle: .none, timeStyle: .short))" : "時刻未設定"
+                print("  - \(task.title) (\(timeInfo))")
+            }
+        }
+        
+        // 制限が有効で、当日のタスクがすべて完了した場合は制限解除
+        if isRestrictionEnabled {
+            if incompleteTasks.isEmpty {
+                print("✅ 当日のタスクがすべて完了 - 制限解除")
+                disableRestriction()
+            } else {
+                print("🔄 未完了タスクが残っているため制限を継続")
+            }
+        } else {
+            print("ℹ️ 制限が無効のため処理なし")
+        }
+        print("=====================================\n")
+    }
+    
+    // タスク時刻の監視を開始
+    private func startTaskTimeMonitoring() {
+        // 1分ごとにタスクの時刻をチェック
+        taskTimeMonitorTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            self?.checkTaskTimeAndUpdateRestriction()
+        }
+    }
+    
+    // タスク時刻をチェックして制限を更新
+    private func checkTaskTimeAndUpdateRestriction() {
+        guard isUWBLinked && isAuthorized else { return }
+        
+        // UWB Secure Bubble内にいて、タスク時刻に達した場合に制限を有効化
+        if let uwbManager = uwbManager, uwbManager.isInSecureBubble {
+            if !isRestrictionEnabled && shouldEnableRestrictionBasedOnTasks() {
+                print("⏰ タスク時刻到達 + UWB Secure Bubble内 - 制限有効化")
+                enableRestriction()
+            } else if isRestrictionEnabled && !shouldEnableRestrictionBasedOnTasks() {
+                print("⏰ タスク時刻終了 - 制限無効化")
+                disableRestriction()
+            }
+        }
     }
     
     // 選択されたアプリの数を取得
@@ -357,6 +506,7 @@ class ScreenTimeManager: ObservableObject {
     
     // デイニシャライザでリソースをクリーンアップ
     deinit {
+        taskTimeMonitorTimer?.invalidate()
         print("\n=== 🔄 ScreenTimeManager デイニシャライザ ===")
         print("♻️ リソースをクリーンアップしました")
         print("==========================================\n")
