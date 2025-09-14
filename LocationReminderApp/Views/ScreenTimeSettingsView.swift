@@ -95,7 +95,6 @@ class FamilyActivitySelectionStore: ObservableObject {
 class ScreenTimeManager: ObservableObject {
     @Published var isAuthorized = false
     @Published var isRestrictionEnabled = false
-    @Published var isUWBLinked = true
     @Published var authorizationStatus = "未認証"
     
     // TaskManagerへの参照を追加
@@ -148,7 +147,7 @@ class ScreenTimeManager: ObservableObject {
             print("❓ 認証状態: 不明")
         }
         print("🎯 制限状態: \(isRestrictionEnabled ? "有効" : "無効")")
-        print("🔗 UWB連動: \(isUWBLinked ? "有効" : "無効")")
+        print("🔗 UWB連動: 常に有効")
         print("=====================================\n")
     }
     
@@ -331,7 +330,6 @@ class ScreenTimeManager: ObservableObject {
     
     // Secure Bubble内での自動制限有効化（新しい条件付き）
     func enableRestrictionForSecureBubble() {
-        guard isUWBLinked else { return }
         
         // 新しい条件：当日のタスクがあり、かつタスクの時刻以降である場合のみ制限
         if shouldEnableRestrictionBasedOnTasks() {
@@ -345,15 +343,14 @@ class ScreenTimeManager: ObservableObject {
     
     // Secure Bubble外での自動制限無効化
     func disableRestrictionForSecureBubble() {
-        guard isUWBLinked else { return }
         print("\n🔴 UWB Secure Bubble外 - 制限無効化")
         disableRestriction()
     }
     
     // タスク完了時に制限を解除
     func handleTaskCompletion() {
-        guard isUWBLinked && isAuthorized else { 
-            print("⚠️ タスク完了処理スキップ: UWB連動無効またはScreen Time未認証")
+        guard isAuthorized else { 
+            print("⚠️ タスク完了処理スキップ: Screen Time未認証")
             return 
         }
         
@@ -397,7 +394,7 @@ class ScreenTimeManager: ObservableObject {
     
     // タスク時刻をチェックして制限を更新
     private func checkTaskTimeAndUpdateRestriction() {
-        guard isUWBLinked && isAuthorized else { return }
+        guard isAuthorized else { return }
         
         // UWB Secure Bubble内にいて、タスク時刻に達した場合に制限を有効化
         if let uwbManager = uwbManager, uwbManager.isInSecureBubble {
@@ -523,60 +520,56 @@ struct ScreenTimeSettingsView: View {
     
     var body: some View {
         List {
-            // UWB連動設定
+            // UWB連動状態表示
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "wave.3.right.circle.fill")
-                            .foregroundColor(screenTimeManager.isUWBLinked ? .blue : .gray)
+                            .foregroundColor(.blue)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("UWB Secure Bubble連動")
                                 .font(.headline)
-                            Text(screenTimeManager.isUWBLinked ? "有効" : "無効")
+                            Text("有効")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                         
                         Spacer()
-                        
-                        Toggle("", isOn: $screenTimeManager.isUWBLinked)
                     }
                     
-                    if screenTimeManager.isUWBLinked {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("現在の状態:")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("現在の状態:")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        
+                        HStack {
+                            Circle()
+                                .fill(uwbManager.isInSecureBubble ? .green : .red)
+                                .frame(width: 8, height: 8)
+                            Text(uwbManager.isInSecureBubble ? "Secure Bubble内 - 制限有効" : "Secure Bubble外 - 制限無効")
                                 .font(.caption)
-                                .fontWeight(.medium)
-                            
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let distance = uwbManager.currentDistance {
                             HStack {
-                                Circle()
-                                    .fill(uwbManager.isInSecureBubble ? .green : .red)
-                                    .frame(width: 8, height: 8)
-                                Text(uwbManager.isInSecureBubble ? "Secure Bubble内 - 制限有効" : "Secure Bubble外 - 制限無効")
+                                Image(systemName: "location.circle.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.caption)
+                                Text(String(format: "距離: %.2fm", distance))
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            
-                            if let distance = uwbManager.currentDistance {
-                                HStack {
-                                    Image(systemName: "location.circle.fill")
-                                        .foregroundColor(.blue)
-                                        .font(.caption)
-                                    Text(String(format: "距離: %.2fm", distance))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
                         }
-                        .padding(.top, 4)
                     }
+                    .padding(.top, 4)
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("UWB連動設定")
+                Text("UWB連動状態")
             } footer: {
-                Text("有効にすると、Secure Bubble内にいる時に自動的にアプリ制限が適用されます。")
+                Text("Secure Bubble内にいる時に自動的にアプリ制限が適用されます。")
             }
             
             // アプリ選択
@@ -657,11 +650,11 @@ struct ScreenTimeSettingsView: View {
             // 選択を永続化
             screenTimeManager.activitySelectionStore.saveSelection()
             
-            // UWB連動が有効でSecure Bubble内にいる場合、即座に制限を適用
-            if screenTimeManager.isUWBLinked && uwbManager.isInSecureBubble {
+            // Secure Bubble内にいる場合、即座に制限を適用
+            if uwbManager.isInSecureBubble {
                 print("🔄 Secure Bubble内のため、即座に制限を更新")
                 screenTimeManager.enableRestrictionForSecureBubble()
-            } else if screenTimeManager.isUWBLinked && !uwbManager.isInSecureBubble {
+            } else {
                 print("🔄 Secure Bubble外のため、制限を無効化")
                 screenTimeManager.disableRestrictionForSecureBubble()
             }

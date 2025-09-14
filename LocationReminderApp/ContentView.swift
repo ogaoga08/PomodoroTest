@@ -367,8 +367,8 @@ struct ContentView: View {
                     return
                 }
                 
-                // UWB状態変化に応じてScreenTime制限を自動切り替え
-                if screenTimeManager.isUWBLinked && screenTimeManager.isAuthorized {
+                // UWB状態変化に応じてScreenTime制限を自動切り替え（常に連動）
+                if screenTimeManager.isAuthorized {
                     print("UWB状態変化でScreenTime制限を切り替え: \(isInBubble ? "有効化" : "無効化")")
                     if isInBubble {
                         screenTimeManager.enableRestrictionForSecureBubble()
