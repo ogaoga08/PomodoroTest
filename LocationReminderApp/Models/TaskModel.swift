@@ -4,6 +4,11 @@ import EventKit
 import CoreLocation
 import MapKit
 
+// NotificationCenter用の拡張
+extension Notification.Name {
+    static let taskUpdated = Notification.Name("taskUpdated")
+}
+
 // 位置ベースリマインダーの設定
 enum LocationTriggerType: String, CaseIterable, Identifiable, Codable {
     case none = "none"
@@ -695,6 +700,11 @@ class EventKitTaskManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             loadReminders() // リマインダーを再読み込み
+            
+            // タスク追加後にScreen Time制限を再評価
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(name: .taskUpdated, object: nil)
+            }
         } catch {
             print("リマインダーの保存に失敗しました: \(error)")
         }
@@ -778,6 +788,11 @@ class EventKitTaskManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             loadReminders()
+            
+            // タスク更新後にScreen Time制限を再評価
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(name: .taskUpdated, object: nil)
+            }
         } catch {
             print("リマインダーの更新に失敗しました: \(error)")
         }
@@ -885,6 +900,11 @@ class EventKitTaskManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             loadReminders()
+            
+            // サブタスク追加後にScreen Time制限を再評価
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(name: .taskUpdated, object: nil)
+            }
         } catch {
             print("サブタスクの保存に失敗しました: \(error)")
         }

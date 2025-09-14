@@ -116,6 +116,7 @@ class ScreenTimeManager: ObservableObject {
         checkAuthorizationStatus()
         setupShieldActionNotifications()
         startTaskTimeMonitoring()
+        setupTaskUpdateNotifications()
         
         // 初回起動時に自動的に認証ダイアログを表示
         if authorizationCenter.authorizationStatus == .notDetermined {
@@ -384,6 +385,39 @@ class ScreenTimeManager: ObservableObject {
         print("=====================================\n")
     }
     
+    // タスク追加/更新時に制限状態を再評価
+    func handleTaskUpdate() {
+        guard isAuthorized else {
+            print("⚠️ タスク更新処理スキップ: Screen Time未認証")
+            return
+        }
+        
+        print("\n=== 📝 タスク更新時の制限チェック ===")
+        
+        // UWB Secure Bubble内にいる場合のみ制限状態を再評価
+        if let uwbManager = uwbManager, uwbManager.isInSecureBubble {
+            if shouldEnableRestrictionBasedOnTasks() {
+                if !isRestrictionEnabled {
+                    print("✅ 新規タスク追加 + 制限条件満足 + Secure Bubble内 - 制限有効化")
+                    enableRestriction()
+                } else {
+                    print("ℹ️ 既に制限有効 - 継続")
+                }
+            } else {
+                if isRestrictionEnabled {
+                    print("❌ 制限条件不満足 - 制限無効化")
+                    disableRestriction()
+                } else {
+                    print("ℹ️ 制限条件不満足 - 制限無効を継続")
+                }
+            }
+        } else {
+            print("⚪ Secure Bubble外のため制限チェックをスキップ")
+        }
+        
+        print("=====================================\n")
+    }
+    
     // タスク時刻の監視を開始
     private func startTaskTimeMonitoring() {
         // 1分ごとにタスクの時刻をチェック
@@ -441,6 +475,26 @@ class ScreenTimeManager: ObservableObject {
         // App Groupsを使用した定期的なポーリング
         Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
             self.checkForShieldActions()
+        }
+    }
+    
+    // タスク更新通知を設定
+    private func setupTaskUpdateNotifications() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(taskWasUpdated),
+            name: .taskUpdated,
+            object: nil
+        )
+        print("\n=== 📝 タスク更新通知設定 ===")
+        print("✅ タスク更新監視を開始")
+        print("=============================\n")
+    }
+    
+    @objc private func taskWasUpdated() {
+        DispatchQueue.main.async {
+            print("📝 タスク更新通知を受信 - 制限状態を再評価")
+            self.handleTaskUpdate()
         }
     }
     
@@ -504,6 +558,7 @@ class ScreenTimeManager: ObservableObject {
     // デイニシャライザでリソースをクリーンアップ
     deinit {
         taskTimeMonitorTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
         print("\n=== 🔄 ScreenTimeManager デイニシャライザ ===")
         print("♻️ リソースをクリーンアップしました")
         print("==========================================\n")

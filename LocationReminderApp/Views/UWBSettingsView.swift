@@ -36,6 +36,65 @@ class NotificationManager: ObservableObject {
         }
     }
     
+    // Screen Time制限が有効になる条件をチェック（ScreenTimeManagerと同じロジック）
+    private func shouldEnableRestrictionBasedOnTasks(todayTasks: [TaskItem]) -> Bool {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        print("\n=== 🕒 通知用タスク時刻条件チェック ===")
+        print("📅 当日のタスク総数: \(todayTasks.count)")
+        
+        // 当日のタスクがない場合は通知不要
+        guard !todayTasks.isEmpty else { 
+            print("❌ 当日のタスクなし - 通知不要")
+            print("===============================\n")
+            return false 
+        }
+        
+        // 未完了のタスクのみをチェック対象とする
+        let incompleteTasks = todayTasks.filter { !$0.isCompleted }
+        print("📊 未完了タスク数: \(incompleteTasks.count)")
+        
+        guard !incompleteTasks.isEmpty else {
+            print("✅ 未完了タスクなし - 通知不要")
+            print("===============================\n")
+            return false
+        }
+        
+        // 時刻が設定されているタスクをチェック
+        let tasksWithTime = incompleteTasks.filter { $0.hasTime }
+        print("⏰ 時刻設定タスク数: \(tasksWithTime.count)")
+        
+        if !tasksWithTime.isEmpty {
+            // 時刻設定されたタスクがある場合、タスク時刻が現在時刻以前（つまり時刻が来た）のタスクがあるかチェック
+            let activeTasksToday = tasksWithTime.filter { task in
+                task.dueDate <= now
+            }
+            print("🔥 時刻が到来したタスク数: \(activeTasksToday.count)")
+            
+            if !activeTasksToday.isEmpty {
+                print("✅ 通知すべきタスクあり（時刻到来済み）")
+                for task in activeTasksToday {
+                    let timeStr = DateFormatter.localizedString(from: task.dueDate, dateStyle: .none, timeStyle: .short)
+                    print("  - \(task.title) (\(timeStr)) - 時刻到来済み")
+                }
+            } else {
+                print("❌ まだ時刻が来ていないタスクのみ - 通知不要")
+                for task in tasksWithTime {
+                    let timeStr = DateFormatter.localizedString(from: task.dueDate, dateStyle: .none, timeStyle: .short)
+                    print("  - \(task.title) (\(timeStr)) - まだ時刻前")
+                }
+            }
+            print("===============================\n")
+            return !activeTasksToday.isEmpty
+        } else {
+            // 時刻設定されていないタスクのみの場合、未完了タスクがあれば通知
+            print("✅ 時刻未設定の未完了タスクあり - 通知必要")
+            print("===============================\n")
+            return true
+        }
+    }
+
     func setRoomStatusNotification(deviceName: String, isInBubble: Bool, todayTasks: [TaskItem] = []) {
         guard isAuthorized else { return }
         
@@ -43,8 +102,11 @@ class NotificationManager: ObservableObject {
         content.title = "Territory"
         
         if isInBubble {
-            // 当日までのタスク（期限切れも含む）がある場合のみ通知を表示
-            guard !todayTasks.isEmpty else { return }
+            // Screen Time制限が有効になる条件をチェック
+            let shouldShowTaskNotification = shouldEnableRestrictionBasedOnTasks(todayTasks: todayTasks)
+            
+            // Screen Time制限条件を満たす場合のみ通知を表示
+            guard shouldShowTaskNotification else { return }
             
             content.subtitle = "🔥タスク開始の時間です🔥"
             
@@ -56,6 +118,12 @@ class NotificationManager: ObservableObject {
                 content.body = "やるべきタスクがあります！始めましょう！"
             }
         } else {
+            // Secure Bubble外では「休憩しましょう」通知は、Screen Time制限が有効になる条件を満たしている場合のみ表示
+            let shouldShowRestNotification = shouldEnableRestrictionBasedOnTasks(todayTasks: todayTasks)
+            
+            // Screen Time制限条件を満たす場合のみ通知を表示
+            guard shouldShowRestNotification else { return }
+            
             content.subtitle = "🎐少し休憩しましょう🎐"
             content.body = "深呼吸しましょう。"
         }
