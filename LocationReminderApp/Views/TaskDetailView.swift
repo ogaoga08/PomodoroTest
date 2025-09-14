@@ -195,6 +195,43 @@ struct TaskDetailView: View {
         updatedTask.priority = editedPriority
         updatedTask.recurrenceType = editedRecurrenceType
         
+        // 他の既存プロパティも保持（位置情報、タグ、サブタスク情報など）
+        updatedTask.locationReminder = task.locationReminder
+        updatedTask.tags = task.tags
+        updatedTask.parentId = task.parentId
+        updatedTask.isSubtask = task.isSubtask
+        updatedTask.subtaskOrder = task.subtaskOrder
+        
+        // 既存のアラーム情報を保持し、必要に応じて更新
+        if task.hasTime != editedHasTime || task.dueDate != editedDueDate {
+            // 時刻設定や日時が変更された場合、アラームも更新が必要
+            if !task.alarms.isEmpty {
+                // 既存のカスタムアラームがある場合、新しい日時に基づいて更新
+                updatedTask.alarms = task.alarms.map { alarm in
+                    var updatedAlarm = alarm
+                    if alarm.type == .absoluteTime, let originalDate = alarm.absoluteDate {
+                        // 絶対時刻アラームの場合、新しい日時に合わせて更新
+                        let calendar = Calendar.current
+                        let timeComponents = calendar.dateComponents([.hour, .minute], from: originalDate)
+                        var newAlarmComponents = calendar.dateComponents([.year, .month, .day], from: editedDueDate)
+                        newAlarmComponents.hour = timeComponents.hour
+                        newAlarmComponents.minute = timeComponents.minute
+                        
+                        if let newAlarmDate = calendar.date(from: newAlarmComponents) {
+                            updatedAlarm.absoluteDate = newAlarmDate
+                        }
+                    }
+                    return updatedAlarm
+                }
+            } else {
+                // カスタムアラームがない場合はデフォルトのままにする（updateTask内で処理される）
+                updatedTask.alarms = []
+            }
+        } else {
+            // 時刻設定や日時が変更されていない場合、既存のアラーム情報をそのまま保持
+            updatedTask.alarms = task.alarms
+        }
+        
         taskManager.updateTask(updatedTask)
     }
 }

@@ -5,6 +5,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.pomodororeminder.uwb.maintenance</string>
+		<string>com.pomodororeminder.screentime.monitoring</string>
 	</array>
 	<key>NSExtension</key>
 	<dict>

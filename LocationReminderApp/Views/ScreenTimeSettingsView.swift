@@ -3,6 +3,7 @@ import FamilyControls
 import ManagedSettings
 import DeviceActivity
 import UIKit
+import BackgroundTasks
 
 // FamilyActivitySelectionを永続化するためのヘルパー
 class FamilyActivitySelectionStore: ObservableObject {
@@ -106,6 +107,13 @@ class ScreenTimeManager: ObservableObject {
     // タスク時刻監視用タイマー
     private var taskTimeMonitorTimer: Timer?
     
+    // バックグラウンド処理用の識別子
+    private var backgroundTaskIdentifier: UIBackgroundTaskIdentifier = .invalid
+    private let backgroundTaskIdentifier_screentime = "com.pomodororeminder.screentime.monitoring"
+    
+    // バックグラウンド状態の監視
+    private var isBackgroundMode: Bool = false
+    
     private let authorizationCenter = AuthorizationCenter.shared
     private let store = ManagedSettingsStore()
     
@@ -117,6 +125,7 @@ class ScreenTimeManager: ObservableObject {
         setupShieldActionNotifications()
         startTaskTimeMonitoring()
         setupTaskUpdateNotifications()
+        setupBackgroundProcessing()
         
         // 初回起動時に自動的に認証ダイアログを表示
         if authorizationCenter.authorizationStatus == .notDetermined {
@@ -558,10 +567,192 @@ class ScreenTimeManager: ObservableObject {
     // デイニシャライザでリソースをクリーンアップ
     deinit {
         taskTimeMonitorTimer?.invalidate()
+        endBackgroundTask()
         NotificationCenter.default.removeObserver(self)
         print("\n=== 🔄 ScreenTimeManager デイニシャライザ ===")
         print("♻️ リソースをクリーンアップしました")
         print("==========================================\n")
+    }
+    
+    // MARK: - バックグラウンド処理管理
+    
+    private func setupBackgroundProcessing() {
+        // アプリ状態変化の監視
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        
+        // BGTaskSchedulerの登録
+        registerBackgroundTasks()
+        
+        print("📱 ScreenTime: バックグラウンド処理の設定完了")
+    }
+    
+    private func registerBackgroundTasks() {
+        // Screen Timeバックグラウンド処理タスクの登録
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: backgroundTaskIdentifier_screentime,
+            using: nil
+        ) { task in
+            self.handleBackgroundScreenTimeTask(task: task as! BGProcessingTask)
+        }
+    }
+    
+    @objc private func appDidEnterBackground() {
+        print("🟡 ScreenTime: アプリがバックグラウンドに移行")
+        isBackgroundMode = true
+        
+        // バックグラウンドタスクの開始
+        beginBackgroundTask()
+        
+        // バックグラウンド用のタスク時刻監視に切り替え
+        transitionToBackgroundMonitoring()
+        
+        // BGTaskSchedulerでの長期監視をスケジュール
+        scheduleBackgroundScreenTimeTask()
+    }
+    
+    @objc private func appWillEnterForeground() {
+        print("🟢 ScreenTime: アプリがフォアグラウンドに復帰")
+        isBackgroundMode = false
+        
+        // バックグラウンドタスクの終了
+        endBackgroundTask()
+        
+        // フォアグラウンド用のタスク時刻監視に復帰
+        transitionToForegroundMonitoring()
+    }
+    
+    private func beginBackgroundTask() {
+        endBackgroundTask() // 既存のタスクがあれば終了
+        
+        backgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(withName: "ScreenTime Task Monitoring") {
+            // 有効期限が切れた場合の処理
+            print("⚠️ ScreenTime: バックグラウンドタスクの有効期限切れ")
+            self.endBackgroundTask()
+        }
+        
+        if backgroundTaskIdentifier != .invalid {
+            print("✅ ScreenTime: バックグラウンドタスク開始: \(self.backgroundTaskIdentifier.rawValue)")
+        }
+    }
+    
+    private func endBackgroundTask() {
+        if backgroundTaskIdentifier != .invalid {
+            print("🔄 ScreenTime: バックグラウンドタスク終了: \(self.backgroundTaskIdentifier.rawValue)")
+            UIApplication.shared.endBackgroundTask(backgroundTaskIdentifier)
+            backgroundTaskIdentifier = .invalid
+        }
+    }
+    
+    private func transitionToBackgroundMonitoring() {
+        print("📱 ScreenTime: バックグラウンド監視モードに移行")
+        
+        // 通常のタイマーを停止
+        taskTimeMonitorTimer?.invalidate()
+        taskTimeMonitorTimer = nil
+        
+        // バックグラウンド用の監視を開始
+        startBackgroundTaskMonitoring()
+    }
+    
+    private func transitionToForegroundMonitoring() {
+        print("📱 ScreenTime: フォアグラウンド監視モードに復帰")
+        
+        // バックグラウンド監視を停止し、通常のタイマー監視を再開
+        startTaskTimeMonitoring()
+    }
+    
+    private func startBackgroundTaskMonitoring() {
+        // バックグラウンドでの定期的なタスク時刻チェック
+        performBackgroundTaskCheck()
+    }
+    
+    private func performBackgroundTaskCheck() {
+        guard isBackgroundMode else { return }
+        
+        print("🔍 ScreenTime: バックグラウンドでタスク時刻をチェック")
+        
+        // UWB Secure Bubble内にいて、タスク時刻に達した場合に制限を有効化
+        if let uwbManager = uwbManager, uwbManager.isInSecureBubble {
+            if !isRestrictionEnabled && shouldEnableRestrictionBasedOnTasks() {
+                print("⏰ バックグラウンド: タスク時刻到達 + UWB Secure Bubble内 - 制限有効化")
+                enableRestriction()
+            } else if isRestrictionEnabled && !shouldEnableRestrictionBasedOnTasks() {
+                print("⏰ バックグラウンド: タスク時刻終了 - 制限無効化")
+                disableRestriction()
+            }
+        }
+        
+        // 次のチェックをスケジュール（バックグラウンドでは5分間隔）
+        if isBackgroundMode && backgroundTaskIdentifier != .invalid {
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 300.0) {
+                self.performBackgroundTaskCheck()
+            }
+        }
+    }
+    
+    private func scheduleBackgroundScreenTimeTask() {
+        let request = BGProcessingTaskRequest(identifier: backgroundTaskIdentifier_screentime)
+        request.requiresNetworkConnectivity = false
+        request.requiresExternalPower = false // Screen Time制限は充電不要
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // 1分後から実行可能
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("📅 ScreenTime: バックグラウンドタスクをスケジュール")
+        } catch {
+            print("❌ ScreenTime: バックグラウンドタスクのスケジュールに失敗: \(error)")
+        }
+    }
+    
+    private func handleBackgroundScreenTimeTask(task: BGProcessingTask) {
+        print("🔄 ScreenTime: バックグラウンドメンテナンスタスク開始")
+        
+        task.expirationHandler = {
+            print("⚠️ ScreenTime: バックグラウンドメンテナンスタスク期限切れ")
+            task.setTaskCompleted(success: false)
+        }
+        
+        // バックグラウンドでのScreen Time制限チェックを実行
+        performBackgroundScreenTimeMaintenance { success in
+            task.setTaskCompleted(success: success)
+            
+            // 次のタスクをスケジュール
+            self.scheduleBackgroundScreenTimeTask()
+        }
+    }
+    
+    private func performBackgroundScreenTimeMaintenance(completion: @escaping (Bool) -> Void) {
+        print("🔍 ScreenTime: バックグラウンドメンテナンス実行")
+        
+        // UWB状態とタスク状況をチェック
+        if let uwbManager = uwbManager {
+            if uwbManager.isInSecureBubble {
+                if shouldEnableRestrictionBasedOnTasks() && !isRestrictionEnabled {
+                    print("🔒 バックグラウンドメンテナンス: 制限を有効化")
+                    enableRestriction()
+                } else if !shouldEnableRestrictionBasedOnTasks() && isRestrictionEnabled {
+                    print("🔓 バックグラウンドメンテナンス: 制限を無効化")
+                    disableRestriction()
+                }
+            } else if isRestrictionEnabled {
+                print("🔓 バックグラウンドメンテナンス: Bubble外のため制限を無効化")
+                disableRestriction()
+            }
+        }
+        
+        completion(true)
     }
 }
 
