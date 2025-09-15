@@ -253,7 +253,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var subtaskOrder: Int = 0 // サブタスクの順序
     
     // 明示的な初期化子
-    init(title: String, memo: String, dueDate: Date, hasTime: Bool = false, priority: TaskPriority = .none, recurrenceType: RecurrenceType = .none, locationReminder: LocationReminder = LocationReminder(), alarms: [TaskAlarm] = [], tags: [String] = [], parentId: UUID? = nil, isSubtask: Bool = false, subtaskOrder: Int = 0) {
+    init(title: String, memo: String, dueDate: Date, hasTime: Bool = true, priority: TaskPriority = .none, recurrenceType: RecurrenceType = .none, locationReminder: LocationReminder = LocationReminder(), alarms: [TaskAlarm] = [], tags: [String] = [], parentId: UUID? = nil, isSubtask: Bool = false, subtaskOrder: Int = 0) {
         self.title = title
         self.memo = memo
         self.dueDate = dueDate

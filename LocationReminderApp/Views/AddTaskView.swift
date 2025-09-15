@@ -7,7 +7,7 @@ struct AddTaskView: View {
     @State private var title = ""
     @State private var memo = ""
     @State private var dueDate = Date()
-    @State private var hasTime = false
+    @State private var hasTime = true
     @State private var priority: TaskPriority = .none
     @State private var recurrenceType: RecurrenceType = .none
     
@@ -123,23 +123,11 @@ struct AddTaskView: View {
                             
                             // 期限設定
                             VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("取り組む日時")
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
-                                    
-                                    Spacer()
-                                    
-                                    HStack(spacing: 8) {
-                                        Text("時刻を設定")
-                                            .font(.caption)
-                                            .foregroundColor(.primary)
-                                        Toggle("", isOn: $hasTime)
-                                            .labelsHidden()
-                                    }
-                                }
+                                Text("取り組む日時")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
                                 
-                                if hasTime {
+                                HStack {
                                     DatePicker("期限日時", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
                                         .datePickerStyle(.compact)
                                         .labelsHidden()
@@ -148,11 +136,8 @@ struct AddTaskView: View {
                                             // 5分刻みに設定
                                             UIDatePicker.appearance().minuteInterval = 5
                                         }
-                                } else {
-                                    DatePicker("期限日", selection: $dueDate, displayedComponents: [.date])
-                                        .datePickerStyle(.compact)
-                                        .labelsHidden()
-                                        .environment(\.locale, Locale(identifier: "ja_JP"))
+                                    
+                                    Spacer()
                                 }
                             }
                             

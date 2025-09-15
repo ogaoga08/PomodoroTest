@@ -87,17 +87,10 @@ struct TaskDetailView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text("期限")
-                                    .font(.headline)
-                                
-                                Spacer()
-                                
-                                Toggle("時刻を設定", isOn: $editedHasTime)
-                                    .font(.caption)
-                            }
+                            Text("期限")
+                                .font(.headline)
                             
-                            if editedHasTime {
+                            HStack {
                                 DatePicker("期限日時", selection: $editedDueDate, displayedComponents: [.date, .hourAndMinute])
                                     .datePickerStyle(.compact)
                                     .labelsHidden()
@@ -106,11 +99,8 @@ struct TaskDetailView: View {
                                         // 5分刻みに設定
                                         UIDatePicker.appearance().minuteInterval = 5
                                     }
-                            } else {
-                                DatePicker("期限日", selection: $editedDueDate, displayedComponents: [.date])
-                                    .datePickerStyle(.compact)
-                                    .labelsHidden()
-                                    .environment(\.locale, Locale(identifier: "ja_JP"))
+                                
+                                Spacer()
                             }
                         }
                         
@@ -180,7 +170,7 @@ struct TaskDetailView: View {
             editedTitle = task.title
             editedMemo = task.memo
             editedDueDate = task.dueDate
-            editedHasTime = task.hasTime
+            editedHasTime = true // 時刻設定を必須にするため常にtrue
             editedPriority = task.priority
             editedRecurrenceType = task.recurrenceType
         }
@@ -191,7 +181,7 @@ struct TaskDetailView: View {
         updatedTask.title = editedTitle
         updatedTask.memo = editedMemo
         updatedTask.dueDate = editedDueDate
-        updatedTask.hasTime = editedHasTime
+        updatedTask.hasTime = true // 時刻設定を必須にするため常にtrue
         updatedTask.priority = editedPriority
         updatedTask.recurrenceType = editedRecurrenceType
         
