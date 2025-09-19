@@ -235,6 +235,21 @@ class UWBManager: NSObject, ObservableObject {
     // ScreenTimeManagerへの参照を追加
     weak var screenTimeManager: ScreenTimeManager?
     
+    // 統計データ収集用
+    private let userDefaults = UserDefaults.standard
+    private let bubbleSessionsKey = "uwb_bubble_sessions"
+    private var currentOutsideStartTime: Date?
+    private var todayBreakCount: Int = 0
+    
+    // 統計データ構造
+    struct BubbleSession: Codable {
+        let startTime: Date
+        let endTime: Date
+        let duration: TimeInterval
+        let isOutside: Bool // true: bubble外, false: bubble内
+        let taskId: String? // 関連するタスクのID
+    }
+    
     private var centralManager: CBCentralManager?
     private var niSessions: [Int: NISession] = [:]
     private var accessoryConfigurations: [Int: NINearbyAccessoryConfiguration] = [:]
@@ -552,6 +567,9 @@ class UWBManager: NSObject, ObservableObject {
                     self.isInSecureBubble = isInBubbleBasedOnMessage
                 }
                 
+                // セッション記録
+                self.recordBubbleStateChange(isInBubble: isInBubbleBasedOnMessage)
+                
                 previousSecureBubbleStatus = isInBubbleBasedOnMessage
                 
                 // 通知設定が有効な場合のみ通知を送信
@@ -610,6 +628,9 @@ class UWBManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.isInSecureBubble = isCurrentlyInBubble
             }
+            
+            // セッション記録
+            self.recordBubbleStateChange(isInBubble: isCurrentlyInBubble)
             
             previousSecureBubbleStatus = isCurrentlyInBubble
             
@@ -1572,6 +1593,99 @@ class UWBManager: NSObject, ObservableObject {
     private func cleanupLogs() {
         // ログファイルのクリーンアップ（実装は必要に応じて）
         logger.info("ログクリーンアップ実行")
+    }
+    
+    // Bubble状態変化を記録
+    private func recordBubbleStateChange(isInBubble: Bool) {
+        let now = Date()
+        
+        if !isInBubble {
+            // Bubble外になった場合
+            if currentOutsideStartTime == nil {
+                currentOutsideStartTime = now
+                // 休憩回数をカウント
+                let calendar = Calendar.current
+                if calendar.isDateInToday(now) {
+                    todayBreakCount += 1
+                    logger.info("📊 休憩回数カウント: \(self.todayBreakCount)")
+                }
+            }
+        } else {
+            // Bubble内に戻った場合
+            if let startTime = currentOutsideStartTime {
+                let session = BubbleSession(
+                    startTime: startTime,
+                    endTime: now,
+                    duration: now.timeIntervalSince(startTime),
+                    isOutside: true,
+                    taskId: getCurrentTaskId()
+                )
+                saveBubbleSession(session)
+                currentOutsideStartTime = nil
+            }
+        }
+    }
+    
+    // 現在のタスクIDを取得
+    private func getCurrentTaskId() -> String? {
+        guard let taskManager = taskManager else { return nil }
+        let todayTasks = getTasksDueUntilToday()
+        return todayTasks.first { !$0.isCompleted }?.id.uuidString
+    }
+    
+    // Bubbleセッションを保存
+    private func saveBubbleSession(_ session: BubbleSession) {
+        var sessions = getBubbleSessions()
+        sessions.append(session)
+        
+        // 過去30日間のデータのみ保持
+        let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+        sessions = sessions.filter { $0.startTime >= thirtyDaysAgo }
+        
+        if let encoded = try? JSONEncoder().encode(sessions) {
+            userDefaults.set(encoded, forKey: bubbleSessionsKey)
+            logger.info("📊 Bubbleセッション保存: \(String(format: "%.1f", session.duration / 60))分 (外部)")
+        }
+    }
+    
+    // Bubbleセッションを取得
+    func getBubbleSessions() -> [BubbleSession] {
+        guard let data = userDefaults.data(forKey: bubbleSessionsKey),
+              let sessions = try? JSONDecoder().decode([BubbleSession].self, from: data) else {
+            return []
+        }
+        return sessions
+    }
+    
+    // 今日の総不在時間を計算
+    func getTodayTotalOutsideTime() -> TimeInterval {
+        let sessions = getBubbleSessions()
+        let today = Calendar.current.startOfDay(for: Date())
+        let todayOutsideSessions = sessions.filter { 
+            $0.isOutside && Calendar.current.isDate($0.startTime, inSameDayAs: today)
+        }
+        
+        return todayOutsideSessions.reduce(0) { $0 + $1.duration }
+    }
+    
+    // 今日の休憩回数を取得
+    func getTodayBreakCount() -> Int {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // 保存されたセッションから今日の休憩回数を計算
+        let sessions = getBubbleSessions()
+        let todayOutsideSessions = sessions.filter { 
+            $0.isOutside && calendar.isDate($0.startTime, inSameDayAs: today)
+        }
+        
+        // 現在進行中の休憩も含める
+        var breakCount = todayOutsideSessions.count
+        if currentOutsideStartTime != nil && calendar.isDateInToday(Date()) {
+            breakCount += 1
+        }
+        
+        return breakCount
     }
     
 

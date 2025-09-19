@@ -100,8 +100,9 @@ struct ContentView: View {
                         
                         // タスクリスト
                         List {
-                            if !todayTasks.isEmpty {
-                                                                Section {
+                            // 今日のタスクセクション（常に表示）
+                            Section {
+                                if !todayTasks.isEmpty {
                                     ForEach(todayTasks) { task in
                                         TaskRowView(
                                             task: task,
@@ -124,13 +125,23 @@ struct ContentView: View {
                                              .tint(.green)
                                          }
                                     }
-                                } header: {
-                                    Text("今日のタスク")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                        .textCase(nil)
+                                } else {
+                                    // 今日のタスクがない場合の表示
+                                    HStack {
+                                        Image(systemName: "checkmark.circle")
+                                            .foregroundColor(.green)
+                                        Text("今日のタスクはありません")
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 8)
                                 }
+                            } header: {
+                                Text("今日のタスク")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.primary)
+                                    .textCase(nil)
                             }
                             
                             if !futureTasks.isEmpty {

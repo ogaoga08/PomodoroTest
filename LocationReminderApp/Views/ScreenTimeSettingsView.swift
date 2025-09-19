@@ -120,6 +120,19 @@ class ScreenTimeManager: ObservableObject {
     // FamilyActivitySelectionStoreを使用
     @Published var activitySelectionStore = FamilyActivitySelectionStore()
     
+    // 統計データ収集用
+    private let userDefaults = UserDefaults.standard
+    private let restrictionSessionsKey = "screen_time_restriction_sessions"
+    private var currentRestrictionStartTime: Date?
+    
+    // 統計データ構造
+    struct RestrictionSession: Codable {
+        let startTime: Date
+        let endTime: Date
+        let duration: TimeInterval
+        let taskId: String? // 関連するタスクのID
+    }
+    
     init() {
         checkAuthorizationStatus()
         setupShieldActionNotifications()
@@ -249,6 +262,7 @@ class ScreenTimeManager: ObservableObject {
         
         DispatchQueue.main.async {
             self.isRestrictionEnabled = true
+            self.currentRestrictionStartTime = Date() // 制限開始時刻を記録
             print("✅ Screen Time制限を有効化しました")
             print("=====================================\n")
         }
@@ -263,6 +277,19 @@ class ScreenTimeManager: ObservableObject {
         print("🧹 すべての制限設定をクリア")
         
         DispatchQueue.main.async {
+            // 制限セッションを記録
+            if let startTime = self.currentRestrictionStartTime {
+                let endTime = Date()
+                let session = RestrictionSession(
+                    startTime: startTime,
+                    endTime: endTime,
+                    duration: endTime.timeIntervalSince(startTime),
+                    taskId: self.getCurrentTaskId()
+                )
+                self.saveRestrictionSession(session)
+                self.currentRestrictionStartTime = nil
+            }
+            
             self.isRestrictionEnabled = false
             print("✅ Screen Time制限を無効化しました")
             print("=====================================\n")
@@ -459,6 +486,58 @@ class ScreenTimeManager: ObservableObject {
     // 選択されたアプリを全て削除
     func clearSelectedApps() {
         activitySelectionStore.clearSelection()
+    }
+    
+    // 現在のタスクIDを取得
+    private func getCurrentTaskId() -> String? {
+        guard let taskManager = taskManager else { return nil }
+        let todayTasks = getTodayTasks()
+        return todayTasks.first { !$0.isCompleted }?.id.uuidString
+    }
+    
+    // 制限セッションを保存
+    private func saveRestrictionSession(_ session: RestrictionSession) {
+        var sessions = getRestrictionSessions()
+        sessions.append(session)
+        
+        // 過去30日間のデータのみ保持
+        let thirtyDaysAgo = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+        sessions = sessions.filter { $0.startTime >= thirtyDaysAgo }
+        
+        if let encoded = try? JSONEncoder().encode(sessions) {
+            userDefaults.set(encoded, forKey: restrictionSessionsKey)
+            print("📊 制限セッション保存: \(String(format: "%.1f", session.duration / 60))分")
+        }
+    }
+    
+    // 制限セッションを取得
+    func getRestrictionSessions() -> [RestrictionSession] {
+        guard let data = userDefaults.data(forKey: restrictionSessionsKey),
+              let sessions = try? JSONDecoder().decode([RestrictionSession].self, from: data) else {
+            return []
+        }
+        return sessions
+    }
+    
+    // 平均在室時間を計算
+    func getAverageInRoomTime() -> TimeInterval {
+        let sessions = getRestrictionSessions()
+        let today = Calendar.current.startOfDay(for: Date())
+        let todaySessions = sessions.filter { Calendar.current.isDate($0.startTime, inSameDayAs: today) }
+        
+        guard !todaySessions.isEmpty else { return 0 }
+        
+        let totalTime = todaySessions.reduce(0) { $0 + $1.duration }
+        return totalTime / Double(todaySessions.count)
+    }
+    
+    // 今日の総制限時間を計算
+    func getTodayTotalInRoomTime() -> TimeInterval {
+        let sessions = getRestrictionSessions()
+        let today = Calendar.current.startOfDay(for: Date())
+        let todaySessions = sessions.filter { Calendar.current.isDate($0.startTime, inSameDayAs: today) }
+        
+        return todaySessions.reduce(0) { $0 + $1.duration }
     }
     
     // 選択状態の詳細情報

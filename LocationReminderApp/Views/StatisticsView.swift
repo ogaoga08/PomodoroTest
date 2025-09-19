@@ -51,6 +51,18 @@ struct OverviewStatisticsView: View {
         taskManager.getDetailedStatistics()
     }
     
+    // 時間間隔をフォーマットする関数
+    private func formatTimeInterval(_ timeInterval: TimeInterval) -> String {
+        let hours = Int(timeInterval) / 3600
+        let minutes = (Int(timeInterval) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h\(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             // メイン統計カード（大きめ表示）
@@ -61,13 +73,20 @@ struct OverviewStatisticsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 HStack(spacing: 20) {
-                    // 残りのタスク（赤ベース）
+                    // 平均在室時間（緑ベース）
                     VStack(spacing: 8) {
-                        Text("残りのタスク")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white)
-                        Text("\(statistics.todayTasks)")
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.8))
+                                Text("平均在室時間")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        Text(formatTimeInterval(statistics.averageInRoomTime))
                             .font(.largeTitle)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -76,27 +95,27 @@ struct OverviewStatisticsView: View {
                     .padding(.vertical, 20)
                     .background(
                         LinearGradient(
-                            colors: [Color.red.opacity(0.8), Color.red.opacity(0.6)],
+                            colors: [Color.green.opacity(0.8), Color.green.opacity(0.6)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .cornerRadius(16)
                     
-                    // 期限遂行率（青ベース）
+                    // 不在時間（オレンジベース）
                     VStack(spacing: 8) {
                         VStack(spacing: 4) {
                             HStack(spacing: 4) {
-                                Image(systemName: "chart.bar.fill")
+                                Image(systemName: "location.slash")
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.8))
-                                Text("期限遂行率")
+                                Text("不在時間")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                     .foregroundColor(.white)
                             }
                         }
-                        Text("\(Int(statistics.completionRate * 100))%")
+                        Text(formatTimeInterval(statistics.totalOutsideTime))
                             .font(.largeTitle)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -105,7 +124,7 @@ struct OverviewStatisticsView: View {
                     .padding(.vertical, 20)
                     .background(
                         LinearGradient(
-                            colors: [Color.blue.opacity(0.8), Color.blue.opacity(0.6)],
+                            colors: [Color.orange.opacity(0.8), Color.orange.opacity(0.6)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -147,26 +166,26 @@ struct OverviewStatisticsView: View {
             .background(Color(.systemGroupedBackground))
             .cornerRadius(12)
             
-            // 詳細統計
+            // 休憩回数統計
             VStack(spacing: 16) {
-                Text("詳細統計")
+                Text("作業統計")
                     .font(.title2)
                     .fontWeight(.bold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 HStack(spacing: 16) {
                     StatCard(
+                        title: "休憩回数",
+                        value: "\(statistics.breakCount)回",
+                        color: .blue,
+                        icon: "cup.and.saucer.fill"
+                    )
+                    
+                    StatCard(
                         title: "今日完了",
                         value: "\(statistics.todayCompleted)",
                         color: .green,
                         icon: "checkmark.circle.fill"
-                    )
-                    
-                    StatCard(
-                        title: "期限超過",
-                        value: "\(statistics.overdueTasks)",
-                        color: .red,
-                        icon: "exclamationmark.triangle"
                     )
                 }
             }

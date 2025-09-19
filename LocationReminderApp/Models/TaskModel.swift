@@ -1113,6 +1113,11 @@ class EventKitTaskManager: ObservableObject {
         // 今月の統計
         let monthlyCompleted: Int
         let monthlyCreated: Int
+        
+        // 新しい統計項目
+        let averageInRoomTime: TimeInterval // 平均在室時間（秒）
+        let totalOutsideTime: TimeInterval // 不在時間（秒）
+        let breakCount: Int // 休憩回数
     }
     
     /// 週別統計データ
@@ -1189,6 +1194,9 @@ class EventKitTaskManager: ObservableObject {
             task.dueDate >= monthStart
         }.count
         
+        // 新しい統計項目を計算
+        let (averageInRoomTime, totalOutsideTime, breakCount) = calculateTimeStatistics()
+        
         return TaskStatistics(
             totalTasks: totalTasks,
             completedTasks: completedCount,
@@ -1205,8 +1213,97 @@ class EventKitTaskManager: ObservableObject {
             weeklyCompleted: weeklyCompleted,
             weeklyCreated: weeklyCreated,
             monthlyCompleted: monthlyCompleted,
-            monthlyCreated: monthlyCreated
+            monthlyCreated: monthlyCreated,
+            averageInRoomTime: averageInRoomTime,
+            totalOutsideTime: totalOutsideTime,
+            breakCount: breakCount
         )
+    }
+    
+    /// 時間関連の統計を計算
+    private func calculateTimeStatistics() -> (averageInRoomTime: TimeInterval, totalOutsideTime: TimeInterval, breakCount: Int) {
+        // 実際のデータを取得
+        let averageInRoomTime = getAverageInRoomTimeFromManagers()
+        let totalOutsideTime = getTotalOutsideTimeFromManagers()
+        let breakCount = getBreakCountFromManagers()
+        
+        return (averageInRoomTime, totalOutsideTime, breakCount)
+    }
+    
+    /// ScreenTimeManagerから平均在室時間を取得
+    private func getAverageInRoomTimeFromManagers() -> TimeInterval {
+        // ScreenTimeManagerのインスタンスを取得する方法を実装
+        // 現在はUserDefaultsから直接データを読み取る
+        let userDefaults = UserDefaults.standard
+        let restrictionSessionsKey = "screen_time_restriction_sessions"
+        
+        guard let data = userDefaults.data(forKey: restrictionSessionsKey),
+              let sessions = try? JSONDecoder().decode([RestrictionSession].self, from: data) else {
+            return 0
+        }
+        
+        let today = Calendar.current.startOfDay(for: Date())
+        let todaySessions = sessions.filter { Calendar.current.isDate($0.startTime, inSameDayAs: today) }
+        
+        guard !todaySessions.isEmpty else { return 0 }
+        
+        let totalTime = todaySessions.reduce(0) { $0 + $1.duration }
+        return totalTime / Double(todaySessions.count)
+    }
+    
+    /// UWBManagerから不在時間を取得
+    private func getTotalOutsideTimeFromManagers() -> TimeInterval {
+        // UWBManagerのデータをUserDefaultsから直接読み取る
+        let userDefaults = UserDefaults.standard
+        let bubbleSessionsKey = "uwb_bubble_sessions"
+        
+        guard let data = userDefaults.data(forKey: bubbleSessionsKey),
+              let sessions = try? JSONDecoder().decode([BubbleSession].self, from: data) else {
+            return 0
+        }
+        
+        let today = Calendar.current.startOfDay(for: Date())
+        let todayOutsideSessions = sessions.filter { 
+            $0.isOutside && Calendar.current.isDate($0.startTime, inSameDayAs: today)
+        }
+        
+        return todayOutsideSessions.reduce(0) { $0 + $1.duration }
+    }
+    
+    /// UWBManagerから休憩回数を取得
+    private func getBreakCountFromManagers() -> Int {
+        // UWBManagerのデータをUserDefaultsから直接読み取る
+        let userDefaults = UserDefaults.standard
+        let bubbleSessionsKey = "uwb_bubble_sessions"
+        
+        guard let data = userDefaults.data(forKey: bubbleSessionsKey),
+              let sessions = try? JSONDecoder().decode([BubbleSession].self, from: data) else {
+            return 0
+        }
+        
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let todayOutsideSessions = sessions.filter { 
+            $0.isOutside && calendar.isDate($0.startTime, inSameDayAs: today)
+        }
+        
+        return todayOutsideSessions.count
+    }
+    
+    // 統計データ構造の定義（ScreenTimeManagerとUWBManagerと同じ構造）
+    private struct RestrictionSession: Codable {
+        let startTime: Date
+        let endTime: Date
+        let duration: TimeInterval
+        let taskId: String?
+    }
+    
+    private struct BubbleSession: Codable {
+        let startTime: Date
+        let endTime: Date
+        let duration: TimeInterval
+        let isOutside: Bool
+        let taskId: String?
     }
     
     /// 過去数週間の週別統計を取得
