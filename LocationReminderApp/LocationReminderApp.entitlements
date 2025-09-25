@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.locationreminder.shieldaction</string>
+		<string>group.com.example.PomodoroReminderApp</string>
 	</array>
 </dict>
 </plist>

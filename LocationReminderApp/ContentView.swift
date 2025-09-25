@@ -8,12 +8,15 @@ struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
     @StateObject private var uwbManager: UWBManager = UWBManager.shared
     @StateObject private var screenTimeManager = ScreenTimeManager()
+    @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var permissionManager = PermissionManager.shared
 
     @State private var showingAddTask = false
     @State private var selectedTask: TaskItem? = nil
     @State private var showingCompletedTasks = false
     @State private var showingReminderListSelection = false
     @State private var showingMenu = false
+    @State private var showingPermissionOnboarding = false
     
     // チェックボタンの遅延機能用
     @State private var pendingCompletions: [UUID: Timer] = [:]
@@ -361,13 +364,27 @@ struct ContentView: View {
                 isPresented: $showingReminderListSelection
             )
         }
+        .sheet(isPresented: $showingPermissionOnboarding) {
+            PermissionOnboardingView()
+        }
         .onAppear {
-            // UWBManagerにTaskManagerとScreenTimeManagerの参照を設定
+            // 各マネージャー間の参照を設定
             uwbManager.taskManager = taskManager
             uwbManager.screenTimeManager = screenTimeManager
-            // ScreenTimeManagerにTaskManagerとUWBManagerの参照を設定
             screenTimeManager.taskManager = taskManager
             screenTimeManager.uwbManager = uwbManager
+            
+            // PermissionManagerに各マネージャーの参照を設定
+            permissionManager.taskManager = taskManager
+            permissionManager.screenTimeManager = screenTimeManager
+            permissionManager.uwbManager = uwbManager
+            permissionManager.notificationManager = notificationManager
+            
+            // 初回起動時に許可状態をチェック
+            permissionManager.checkAllPermissionStatuses()
+            
+            // オンボーディングは手動で開く場合のみ表示（各マネージャーの自動ダイアログを優先）
+            // 必要に応じて設定画面から手動でオンボーディングを開くことができる
         }
         .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
             // UWB状態が変化してから2秒待って処理を実行（チャタリング防止）

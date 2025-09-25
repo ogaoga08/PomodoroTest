@@ -235,7 +235,7 @@ enum TaskPriority: Int, CaseIterable, Identifiable, Codable {
 }
 
 struct TaskItem: Identifiable, Equatable, Codable {
-    let id = UUID()
+    var id = UUID()
     var title: String
     var memo: String
     var dueDate: Date
@@ -556,6 +556,11 @@ class EventKitTaskManager: ObservableObject {
                 }
             }
         }
+    }
+    
+    // PermissionManager用のパブリックメソッド
+    func requestReminderAccess() {
+        requestAccess()
     }
     
     private func setupCalendar() {

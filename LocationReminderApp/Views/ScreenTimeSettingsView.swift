@@ -19,40 +19,36 @@ class FamilyActivitySelectionStore: ObservableObject {
     }
     
     func saveSelection() {
-        do {
-            // 各トークンセットが空でない場合のみエンコード
-            let applicationsData = selection.applicationTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.applicationTokens)
-            let categoriesData = selection.categoryTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.categoryTokens)
-            let webDomainsData = selection.webDomainTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.webDomainTokens)
-            
-            // データが存在する場合のみ保存、空の場合は削除
-            if let applicationsData = applicationsData {
-                userDefaults.set(applicationsData, forKey: applicationsKey)
-            } else {
-                userDefaults.removeObject(forKey: applicationsKey)
-            }
-            
-            if let categoriesData = categoriesData {
-                userDefaults.set(categoriesData, forKey: categoriesKey)
-            } else {
-                userDefaults.removeObject(forKey: categoriesKey)
-            }
-            
-            if let webDomainsData = webDomainsData {
-                userDefaults.set(webDomainsData, forKey: webDomainsKey)
-            } else {
-                userDefaults.removeObject(forKey: webDomainsKey)
-            }
-
-            print("\n=== 🔒 FamilyActivitySelection 保存処理 ===")
-            print("✅ 保存完了")
-            print("📱 アプリ数: \(selection.applicationTokens.count)")
-            print("📂 カテゴリ数: \(selection.categoryTokens.count)")
-            print("🌐 Webドメイン数: \(selection.webDomainTokens.count)")
-            print("============================================\n")
-        } catch {
-            print("\n❌ FamilyActivitySelection保存エラー: \(error)\n")
+        // 各トークンセットが空でない場合のみエンコード
+        let applicationsData = selection.applicationTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.applicationTokens)
+        let categoriesData = selection.categoryTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.categoryTokens)
+        let webDomainsData = selection.webDomainTokens.isEmpty ? nil : try? JSONEncoder().encode(selection.webDomainTokens)
+        
+        // データが存在する場合のみ保存、空の場合は削除
+        if let applicationsData = applicationsData {
+            userDefaults.set(applicationsData, forKey: applicationsKey)
+        } else {
+            userDefaults.removeObject(forKey: applicationsKey)
         }
+        
+        if let categoriesData = categoriesData {
+            userDefaults.set(categoriesData, forKey: categoriesKey)
+        } else {
+            userDefaults.removeObject(forKey: categoriesKey)
+        }
+        
+        if let webDomainsData = webDomainsData {
+            userDefaults.set(webDomainsData, forKey: webDomainsKey)
+        } else {
+            userDefaults.removeObject(forKey: webDomainsKey)
+        }
+
+        print("\n=== 🔒 FamilyActivitySelection 保存処理 ===")
+        print("✅ 保存完了")
+        print("📱 アプリ数: \(selection.applicationTokens.count)")
+        print("📂 カテゴリ数: \(selection.categoryTokens.count)")
+        print("🌐 Webドメイン数: \(selection.webDomainTokens.count)")
+        print("============================================\n")
     }
     
     func loadSelection() {
@@ -140,9 +136,14 @@ class ScreenTimeManager: ObservableObject {
         setupTaskUpdateNotifications()
         setupBackgroundProcessing()
         
-        // 初回起動時に自動的に認証ダイアログを表示
+        // 初回起動時に自動的に認証ダイアログを表示（PermissionManagerと併用）
         if authorizationCenter.authorizationStatus == .notDetermined {
-            requestAuthorization()
+            // PermissionManagerが管理していない場合のフォールバック
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if self.authorizationCenter.authorizationStatus == .notDetermined {
+                    self.requestAuthorization()
+                }
+            }
         }
     }
     
@@ -309,7 +310,6 @@ class ScreenTimeManager: ObservableObject {
     private func shouldEnableRestrictionBasedOnTasks() -> Bool {
         let todayTasks = getTodayTasks()
         let now = Date()
-        let calendar = Calendar.current
         
         print("\n=== 🕒 タスク時刻条件チェック ===")
         print("📅 当日のタスク総数: \(todayTasks.count)")
@@ -490,7 +490,6 @@ class ScreenTimeManager: ObservableObject {
     
     // 現在のタスクIDを取得
     private func getCurrentTaskId() -> String? {
-        guard let taskManager = taskManager else { return nil }
         let todayTasks = getTodayTasks()
         return todayTasks.first { !$0.isCompleted }?.id.uuidString
     }
@@ -588,7 +587,7 @@ class ScreenTimeManager: ObservableObject {
     
     private func checkForShieldActions() {
         // App Groupsから未処理のアクションを確認
-        let defaults = UserDefaults(suiteName: "group.com.locationreminder.shieldaction")
+        let defaults = UserDefaults(suiteName: "group.com.locationreminder.app.shieldaction")
         guard defaults?.string(forKey: "pendingAction") != nil else { return }
         
         // 処理済みのアクションでないことを確認
@@ -611,7 +610,7 @@ class ScreenTimeManager: ObservableObject {
             print("\n=== 🛡️ Shield Action処理 ===")
             
             // App Groupsからアクション情報を取得
-            let defaults = UserDefaults(suiteName: "group.com.locationreminder.shieldaction")
+            let defaults = UserDefaults(suiteName: "group.com.locationreminder.app.shieldaction")
             guard let action = defaults?.string(forKey: "pendingAction") else { return }
             
             print("📢 受信したアクション: \(action)")

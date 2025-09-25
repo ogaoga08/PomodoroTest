@@ -20,6 +20,9 @@
 		543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */; };
 		543113862E1AC78E000EFA3A /* ReminderListSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */; };
 		543113882E1AD919000EFA3A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113872E1AD919000EFA3A /* StatisticsView.swift */; };
+		5468F6632E85879600C28ECB /* NearbyInteraction.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5468F6622E85879600C28ECB /* NearbyInteraction.framework */; };
+		549040D62E82B93B0045A3A1 /* PermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549040D52E82B93B0045A3A1 /* PermissionOnboardingView.swift */; };
+		549040D82E82B9CE0045A3A1 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549040D72E82B9CE0045A3A1 /* PermissionManager.swift */; };
 		5493DAC12E2A234000881BC9 /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5493DAC02E2A234000881BC9 /* FamilyControls.framework */; };
 /* End PBXBuildFile section */
 
@@ -39,7 +42,10 @@
 		543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeSettingsView.swift; sourceTree = "<group>"; };
 		543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderListSelectionView.swift; sourceTree = "<group>"; };
 		543113872E1AD919000EFA3A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
+		5468F6622E85879600C28ECB /* NearbyInteraction.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NearbyInteraction.framework; path = System/Library/Frameworks/NearbyInteraction.framework; sourceTree = SDKROOT; };
 		546E25FD2E1CDA3700E2CD04 /* LocationReminderApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocationReminderApp.entitlements; sourceTree = "<group>"; };
+		549040D52E82B93B0045A3A1 /* PermissionOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionOnboardingView.swift; sourceTree = "<group>"; };
+		549040D72E82B9CE0045A3A1 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		5493DAC02E2A234000881BC9 /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -48,6 +54,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5468F6632E85879600C28ECB /* NearbyInteraction.framework in Frameworks */,
 				5493DAC12E2A234000881BC9 /* FamilyControls.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -79,6 +86,7 @@
 				541F00892E0A37F70092A3B9 /* Info.plist */,
 				1A1A1A1A1A1A1A19 /* LocationReminderApp.swift */,
 				1A1A1A1A1A1A1A1B /* ContentView.swift */,
+				549040D72E82B9CE0045A3A1 /* PermissionManager.swift */,
 				1A1A1A1A1A1A1A33 /* Models */,
 				1A1A1A1A1A1A1A34 /* Views */,
 				1A1A1A1A1A1A1A1D /* Assets.xcassets */,
@@ -113,6 +121,7 @@
 				1A1A1A1A1A1A1A2B /* AddTaskView.swift */,
 				1A1A1A1A1A1A1A2D /* TaskDetailView.swift */,
 				1A1A1A1A1A1A1A2F /* MenuView.swift */,
+				549040D52E82B93B0045A3A1 /* PermissionOnboardingView.swift */,
 				1A1A1A1A1A1A1A31 /* UWBSettingsView.swift */,
 			);
 			path = Views;
@@ -121,6 +130,7 @@
 		5493DABF2E2A234000881BC9 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				5468F6622E85879600C28ECB /* NearbyInteraction.framework */,
 				5493DAC02E2A234000881BC9 /* FamilyControls.framework */,
 			);
 			name = Frameworks;
@@ -154,7 +164,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					1A1A1A1A1A1A1A15 = {
 						CreatedOnToolsVersion = 15.0;
@@ -196,8 +206,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				549040D62E82B93B0045A3A1 /* PermissionOnboardingView.swift in Sources */,
 				1A1A1A1A1A1A1A1C /* ContentView.swift in Sources */,
 				1A1A1A1A1A1A1A28 /* TaskModel.swift in Sources */,
+				549040D82E82B9CE0045A3A1 /* PermissionManager.swift in Sources */,
 				543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */,
 				1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */,
@@ -272,6 +284,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -329,6 +342,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -351,11 +365,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Territory;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "このアプリはBluetoothを使用してUWBデバイスに接続し、距離測定のパラメータを交換します。";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "UWBデバイスとの通信のためにBluetoothを使用します。";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "このアプリはNearby Interaction機能を使用してサードパーティUWBデバイスとの距離測定を行います。";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Nearby Interaction機能を使用してBluetoothで接続されたUWBデバイスとの精密な距離測定を行います。";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "UWBデバイスとの精密な距離測定を行うために使用します。";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "リマインダーアプリと連携します。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -397,11 +411,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Territory;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Bluetooth機能を使用してUWBデバイス（DWM3001CDK）との接続とデータ交換を行います。";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "このアプリはBluetoothを使用してUWBデバイスに接続し、距離測定のパラメータを交換します。";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "UWBデバイスとの通信のためにBluetoothを使用します。";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。";
-				INFOPLIST_KEY_NSNearbyInteractionAllowOnceUsageDescription = "このアプリはNearby Interaction機能を使用してサードパーティUWBデバイスとの距離測定を行います。";
-				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Nearby Interaction機能を使用してBluetoothで接続されたUWBデバイスとの精密な距離測定を行います。";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "UWBデバイスとの精密な距離測定を行うために使用します。";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "リマインダーアプリと連携します。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

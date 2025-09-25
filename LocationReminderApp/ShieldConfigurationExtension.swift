@@ -184,7 +184,7 @@ class ShieldActionExtension: ShieldActionDelegate {
     // メインアプリに通知を送信するヘルパー関数
     private func sendNotificationToMainApp(action: String) {
         // App Groupsを使用してメインアプリと通信
-        let defaults = UserDefaults(suiteName: "group.com.locationreminder.shieldaction")
+        let defaults = UserDefaults(suiteName: "group.com.locationreminder.app.shieldaction")
         defaults?.set(action, forKey: "pendingAction")
         defaults?.set(Date(), forKey: "actionTimestamp")
         

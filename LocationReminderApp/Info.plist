@@ -4,8 +4,8 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.pomodororeminder.uwb.maintenance</string>
-		<string>com.pomodororeminder.screentime.monitoring</string>
+		<string>com.locationreminder.app.uwb.maintenance</string>
+		<string>com.locationreminder.app.screentime.monitoring</string>
 	</array>
 	<key>NSExtension</key>
 	<dict>
@@ -19,17 +19,25 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>LocationReminderApp.ShieldConfigurationExtension</string>
 	</dict>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>リマインダーアプリと連携します。</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>部屋への入退室状態を通知するために使用します。</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>UWBデバイスとの通信のためにBluetoothを使用します。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>リマインダーアプリと連携します。</string>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>UWBデバイスとの精密な距離測定を行うために使用します。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
-		<string>nearby-interaction</string>
 		<string>processing</string>
 		<string>fetch</string>
 		<string>external-accessory</string>
+		<string>nearby-interaction</string>
 	</array>
 </dict>
 </plist>
