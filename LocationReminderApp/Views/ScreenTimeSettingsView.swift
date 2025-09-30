@@ -103,6 +103,9 @@ class ScreenTimeManager: ObservableObject {
     // タスク時刻監視用タイマー
     private var taskTimeMonitorTimer: Timer?
     
+    // 認証状態監視用タイマー
+    private var authStatusMonitorTimer: Timer?
+    
     // バックグラウンド処理用の識別子
     private var backgroundTaskIdentifier: UIBackgroundTaskIdentifier = .invalid
     private let backgroundTaskIdentifier_screentime = "com.pomodororeminder.screentime.monitoring"
@@ -136,6 +139,9 @@ class ScreenTimeManager: ObservableObject {
         setupTaskUpdateNotifications()
         setupBackgroundProcessing()
         
+        // 認証状態の変化を監視
+        setupAuthorizationMonitoring()
+        
         // 初回起動時に自動的に認証ダイアログを表示（PermissionManagerと併用）
         if authorizationCenter.authorizationStatus == .notDetermined {
             // PermissionManagerが管理していない場合のフォールバック
@@ -143,6 +149,39 @@ class ScreenTimeManager: ObservableObject {
                 if self.authorizationCenter.authorizationStatus == .notDetermined {
                     self.requestAuthorization()
                 }
+            }
+        }
+    }
+    
+    // 認証状態の監視を設定
+    private func setupAuthorizationMonitoring() {
+        // 定期的に認証状態をチェック（認証ダイアログの結果を確実に反映するため）
+        authStatusMonitorTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let currentStatus = self.authorizationCenter.authorizationStatus
+            let wasAuthorized = self.isAuthorized
+            
+            switch currentStatus {
+            case .approved:
+                if !wasAuthorized {
+                    DispatchQueue.main.async {
+                        print("🔄 認証状態変化検出: 認証済みに変更")
+                        self.isAuthorized = true
+                        self.authorizationStatus = "認証済み"
+                        self.objectWillChange.send()
+                    }
+                }
+            case .denied, .notDetermined:
+                if wasAuthorized {
+                    DispatchQueue.main.async {
+                        print("🔄 認証状態変化検出: 未認証に変更")
+                        self.isAuthorized = false
+                        self.authorizationStatus = currentStatus == .denied ? "認証拒否" : "未認証"
+                        self.objectWillChange.send()
+                    }
+                }
+            @unknown default:
+                break
             }
         }
     }
@@ -184,11 +223,14 @@ class ScreenTimeManager: ObservableObject {
                 await MainActor.run {
                     print("✅ 認証リクエスト完了")
                     checkAuthorizationStatus()
+                    // 認証状態の変更を明示的に通知
+                    objectWillChange.send()
                 }
             } catch {
                 print("❌ 認証エラー: \(error)")
                 await MainActor.run {
                     authorizationStatus = "認証エラー"
+                    objectWillChange.send()
                 }
             }
         }
@@ -454,6 +496,40 @@ class ScreenTimeManager: ObservableObject {
         print("=====================================\n")
     }
     
+    // リマインダー通知受信時の制限チェック（通知検知専用）
+    func handleReminderNotificationReceived() {
+        guard isAuthorized else {
+            print("⚠️ リマインダー通知処理スキップ: Screen Time未認証")
+            return
+        }
+        
+        print("\n=== 🔔 リマインダー通知による制限チェック ===")
+        
+        // タスクマネージャーでリマインダーを再同期
+        taskManager?.refreshReminders()
+        
+        // 少し待ってから制限状態をチェック（リマインダー同期の完了を待つ）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            // UWB Secure Bubble内にいる場合のみ制限状態を評価
+            if let uwbManager = self.uwbManager, uwbManager.isInSecureBubble {
+                if self.shouldEnableRestrictionBasedOnTasks() {
+                    if !self.isRestrictionEnabled {
+                        print("✅ リマインダー通知 + 制限条件満足 + Secure Bubble内 - 制限有効化")
+                        self.enableRestriction()
+                    } else {
+                        print("ℹ️ 既に制限有効 - 継続")
+                    }
+                } else {
+                    print("⚠️ リマインダー通知受信も制限条件不満足")
+                }
+            } else {
+                print("⚪ Secure Bubble外のため制限は適用されません（通知のみ受信）")
+            }
+        }
+        
+        print("==========================================\n")
+    }
+    
     // タスク時刻の監視を開始
     private func startTaskTimeMonitoring() {
         // 1分ごとにタスクの時刻をチェック
@@ -645,6 +721,7 @@ class ScreenTimeManager: ObservableObject {
     // デイニシャライザでリソースをクリーンアップ
     deinit {
         taskTimeMonitorTimer?.invalidate()
+        authStatusMonitorTimer?.invalidate()
         endBackgroundTask()
         NotificationCenter.default.removeObserver(self)
         print("\n=== 🔄 ScreenTimeManager デイニシャライザ ===")
@@ -839,7 +916,6 @@ struct ScreenTimeSettingsView: View {
     @ObservedObject private var uwbManager = UWBManager.shared
     @State private var showingAppSelection = false
     @State private var showingPermissionAlert = false
-    @State private var isPickerReady = false
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -898,44 +974,57 @@ struct ScreenTimeSettingsView: View {
             
             // アプリ選択
             Section {
-                                 Button(action: {
-                     if screenTimeManager.isAuthorized {
-                         print("\n=== 📱 FamilyActivityPicker 表示 ===")
-                         print("🔓 認証済み - アプリ選択画面を表示します")
-                         
-                         // pickerの表示を少し遅延させる（FamilyControlsフレームワークの準備時間を確保）
-                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                             isPickerReady = true
-                             showingAppSelection = true
-                         }
-                     } else {
-                         print("\n❌ FamilyActivityPicker表示失敗: 認証が必要です")
-                         showingPermissionAlert = true
-                     }
-                     print("=====================================\n")
-                 }) {
+                Button(action: {
+                    print("\n=== 📱 FamilyActivityPicker 表示試行 ===")
+                    print("🔐 認証状態: \(screenTimeManager.authorizationStatus)")
+                    print("✅ isAuthorized: \(screenTimeManager.isAuthorized)")
+                    print("🎯 showingAppSelection: \(showingAppSelection)")
+                    
+                    if screenTimeManager.isAuthorized {
+                        print("🔓 認証済み - アプリ選択画面を表示します")
+                        // 確実に状態を更新するため、少し遅延を入れる
+                        DispatchQueue.main.async {
+                            showingAppSelection = true
+                        }
+                    } else {
+                        print("❌ 認証が必要です - 認証をリクエストします")
+                        screenTimeManager.requestAuthorization()
+                    }
+                    print("=====================================\n")
+                }) {
                     HStack {
                         Image(systemName: "apps.iphone")
-                            .foregroundColor(.blue)
+                            .foregroundColor(screenTimeManager.isAuthorized ? .blue : .gray)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("制限するアプリを選択")
                                 .foregroundColor(.primary)
                                 .font(.headline)
                             
-                            Text(screenTimeManager.selectionDetails)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            if screenTimeManager.isAuthorized {
+                                Text(screenTimeManager.selectionDetails)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("認証が必要です")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
                         }
                         
                         Spacer()
                         
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if screenTimeManager.isAuthorized {
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "lock.fill")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
                     }
                 }
-                .disabled(!screenTimeManager.isAuthorized)
                 
                 // 選択されたアプリをクリア
                 if screenTimeManager.selectedAppsCount > 0 {
@@ -954,15 +1043,7 @@ struct ScreenTimeSettingsView: View {
         .navigationTitle("Screen Time設定")
         .navigationBarTitleDisplayMode(.inline)
         .familyActivityPicker(
-            isPresented: Binding(
-                get: { showingAppSelection && isPickerReady && screenTimeManager.isAuthorized },
-                set: { newValue in 
-                    showingAppSelection = newValue
-                    if !newValue {
-                        isPickerReady = false
-                    }
-                }
-            ),
+            isPresented: $showingAppSelection,
             selection: $screenTimeManager.activitySelectionStore.selection
         )
         .onChange(of: screenTimeManager.activitySelectionStore.selection) { newValue in
@@ -985,11 +1066,22 @@ struct ScreenTimeSettingsView: View {
             print("=======================\n")
         }
         .onChange(of: showingAppSelection) { newValue in
+            print("\n=== 📱 FamilyActivityPicker 状態変更 ===")
+            print("🎯 showingAppSelection: \(showingAppSelection) -> \(newValue)")
+            print("🔐 認証状態: \(screenTimeManager.authorizationStatus)")
+            print("✅ isAuthorized: \(screenTimeManager.isAuthorized)")
+            
             if newValue {
-                print("\n=== 📱 FamilyActivityPicker 表示開始 ===")
+                print("📱 FamilyActivityPicker 表示開始")
+                // 認証状態を再確認
+                if !screenTimeManager.isAuthorized {
+                    print("⚠️ 認証されていないため、表示をキャンセル")
+                    DispatchQueue.main.async {
+                        showingAppSelection = false
+                    }
+                }
             } else {
-                print("\n=== 📱 FamilyActivityPicker 表示終了 ===")
-                isPickerReady = false  // 閉じた時にリセット
+                print("📱 FamilyActivityPicker 表示終了")
             }
             print("========================================\n")
         }
