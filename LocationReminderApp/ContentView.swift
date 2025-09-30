@@ -321,22 +321,11 @@ struct ContentView: View {
             
                 
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        // リマインダーリスト変更ボタン（リストが選択済みの場合のみ表示）
-                        if !taskManager.needsListSelection {
-                            Button(action: { showingReminderListSelection = true }) {
-                                Image(systemName: "list.bullet.rectangle")
-                                    .font(.title3)
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        
-                        // 設定画面へのNavigationLink
-                        NavigationLink(destination: MenuView(taskManager: taskManager)) {
-                            Image(systemName: "gear")
-                                .font(.title3)
-                                .foregroundColor(.blue)
-                        }
+                    // 設定画面へのNavigationLink
+                    NavigationLink(destination: MenuView(taskManager: taskManager)) {
+                        Image(systemName: "gear")
+                            .font(.title3)
+                            .foregroundColor(.blue)
                     }
                 }
             })
