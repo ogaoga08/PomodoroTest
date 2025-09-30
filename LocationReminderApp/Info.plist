@@ -29,6 +29,8 @@
 	<string>リマインダーアプリと連携します。</string>
 	<key>NSNearbyInteractionUsageDescription</key>
 	<string>UWBデバイスとの精密な距離測定を行うために使用します。</string>
+	<key>NSFamilyControlsUsageDescription</key>
+	<string>アプリ使用制限機能を提供するためにFamily Controlsを使用します。</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。</string>
 	<key>UIBackgroundModes</key>
