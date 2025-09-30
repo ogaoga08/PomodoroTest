@@ -7,12 +7,17 @@ import os
 import Foundation
 
 // NotificationManager クラス
-class NotificationManager: ObservableObject {
+class NotificationManager: NSObject, ObservableObject {
     static let shared = NotificationManager()
     
     @Published var isAuthorized = false
     
-    private init() {
+    // ScreenTimeManagerへの参照を追加
+    weak var screenTimeManager: ScreenTimeManager?
+    
+    private override init() {
+        super.init()
+        setupNotificationCenter()
         checkNotificationPermission()
         
         // 初回起動時に通知許可をチェックし、必要に応じて要求
@@ -21,6 +26,12 @@ class NotificationManager: ObservableObject {
                 self.requestAuthorization()
             }
         }
+    }
+    
+    private func setupNotificationCenter() {
+        // UNUserNotificationCenterのdelegateを設定
+        UNUserNotificationCenter.current().delegate = self
+        print("📱 NotificationManager: 通知センターのデリゲートを設定")
     }
     
     func requestAuthorization() {
@@ -190,6 +201,98 @@ struct SavedDeviceInfo: Codable {
     let uniqueID: Int
     let name: String
     let savedDate: Date
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+extension NotificationManager: UNUserNotificationCenterDelegate {
+    // アプリがフォアグラウンドにある時の通知表示制御
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        
+        print("\n=== 📱 フォアグラウンド通知受信 ===")
+        print("🔔 通知ID: \(notification.request.identifier)")
+        print("📝 タイトル: \(notification.request.content.title)")
+        print("📄 内容: \(notification.request.content.body)")
+        
+        // リマインダー通知かどうかをチェック
+        if isReminderNotification(notification) {
+            print("✅ リマインダー通知を検出")
+            handleReminderNotificationReceived(notification)
+        }
+        
+        // 通知を表示
+        completionHandler([.alert, .sound, .badge])
+        print("=====================================\n")
+    }
+    
+    // 通知タップ時の処理
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        
+        print("\n=== 📱 通知タップ受信 ===")
+        print("🔔 通知ID: \(response.notification.request.identifier)")
+        print("📝 アクション: \(response.actionIdentifier)")
+        
+        let notification = response.notification
+        
+        // リマインダー通知かどうかをチェック
+        if isReminderNotification(notification) {
+            print("✅ リマインダー通知のタップを検出")
+            handleReminderNotificationReceived(notification)
+        }
+        
+        completionHandler()
+        print("===========================\n")
+    }
+    
+    // リマインダー通知かどうかを判定
+    private func isReminderNotification(_ notification: UNNotification) -> Bool {
+        let identifier = notification.request.identifier
+        let title = notification.request.content.title
+        let body = notification.request.content.body
+        
+        // リマインダー通知の特徴をチェック
+        // 1. Bundle IDがリマインダーアプリのもの
+        // 2. タイトルや内容にリマインダー関連のキーワードが含まれる
+        let isReminderApp = identifier.contains("com.apple.remindd") ||
+                           identifier.contains("reminder") ||
+                           title.contains("リマインダー") ||
+                           title.contains("Reminder")
+        
+        print("🔍 リマインダー通知判定: \(isReminderApp)")
+        print("   - ID: \(identifier)")
+        print("   - タイトル: \(title)")
+        
+        return isReminderApp
+    }
+    
+    // リマインダー通知受信時の処理
+    private func handleReminderNotificationReceived(_ notification: UNNotification) {
+        print("\n=== 🔔 リマインダー通知処理開始 ===")
+        
+        // Screen Time制限のチェックを実行
+        guard let screenTimeManager = screenTimeManager else {
+            print("❌ ScreenTimeManagerが利用できません")
+            print("=====================================\n")
+            return
+        }
+        
+        // Screen Timeが認証されていない場合はスキップ
+        guard screenTimeManager.isAuthorized else {
+            print("⚠️ Screen Time未認証のため処理をスキップ")
+            print("=====================================\n")
+            return
+        }
+        
+        print("📋 リマインダー通知検知 - Screen Time制限状態をチェック")
+        
+        // 少し遅延を入れてからチェック（通知処理の完了を待つ）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // リマインダー通知専用の処理を実行
+            screenTimeManager.handleReminderNotificationReceived()
+        }
+        
+        print("✅ リマインダー通知処理完了")
+        print("=====================================\n")
+    }
 }
 
 // UWBデバイスモデル

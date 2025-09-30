@@ -313,7 +313,6 @@ struct ContentView: View {
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         }
@@ -373,6 +372,9 @@ struct ContentView: View {
             uwbManager.screenTimeManager = screenTimeManager
             screenTimeManager.taskManager = taskManager
             screenTimeManager.uwbManager = uwbManager
+            
+            // NotificationManagerにScreenTimeManagerの参照を設定
+            notificationManager.screenTimeManager = screenTimeManager
             
             // PermissionManagerに各マネージャーの参照を設定
             permissionManager.taskManager = taskManager
