@@ -235,12 +235,8 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
             handleReminderNotificationReceived(notification)
         }
         
-        // 通知を表示
-        if #available(iOS 14.0, *) {
-            completionHandler([.banner, .list, .sound, .badge])
-        } else {
-            completionHandler([.alert, .sound, .badge])
-        }
+        // フォアグラウンドでは通知を表示しない
+        completionHandler([])
         print("=====================================\n")
     }
     
@@ -402,7 +398,7 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var backgroundTaskIdentifier: UIBackgroundTaskIdentifier = .invalid
     private var backgroundMaintenanceTimer: Timer?
     private var isProcessingBackgroundTask = false
-    private let backgroundTaskIdentifier_uwb = "com.pomodororeminder.uwb.maintenance"
+    private let backgroundTaskIdentifier_uwb = "com.locationreminder.app.uwb.maintenance"
     private var heartbeatTimer: Timer?
     private var lastBackgroundUpdate = Date()
     private var backgroundHeartbeatStartTime: Date?
@@ -1558,14 +1554,21 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         logger.info("🟢 アプリがバックグラウンドに移行完了")
         
-        // バックグラウンドタスクの開始
-        beginBackgroundTask()
-        
-        // バックグラウンド用の処理に移行
-        transitionToBackgroundMode()
-        
-        // バックグラウンドタスクをスケジュール
-        scheduleBackgroundTask()
+        // 自宅内のみバックグラウンド処理を有効化
+        if isAtHome {
+            // バックグラウンドタスクの開始
+            beginBackgroundTask()
+            
+            // バックグラウンド用の処理に移行
+            transitionToBackgroundMode()
+            
+            // 5分後目安でバックグラウンドタスクをスケジュール
+            scheduleUWBBackgroundTask()
+        } else {
+            logger.info("Skip background setup: not at home")
+            endBackgroundTask()
+            stopBackgroundHeartbeat()
+        }
     }
     
     @objc private func appWillEnterForeground() {
@@ -1614,6 +1617,12 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     private func transitionToBackgroundMode() {
         logger.info("📱 バックグラウンドモードに移行")
+        
+        // 自宅外では何もしない
+        guard isAtHome else {
+            logger.info("Skip background mode (not at home)")
+            return
+        }
         
         // フォアグラウンド処理の停止
         stopScanning()
@@ -1739,8 +1748,9 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     private func performBackgroundHeartbeat() {
-        guard isBackgroundMode else { 
-            return 
+        guard isBackgroundMode, isAtHome else {
+            logger.info("Skip background tick (home=\(self.isAtHome), bg=\(self.isBackgroundMode))")
+            return
         }
         
         // ハートビート経過時間計算
@@ -1776,6 +1786,8 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     private func checkAndRepairNISessionIfNeeded(for device: UWBDevice) {
+        // 自宅外では修復ロジックを動かさない
+        guard isAtHome else { return }
         let deviceID = device.uniqueID
         
         // NISessionが存在するか確認
@@ -1794,6 +1806,8 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     private func processBackgroundRepair() {
+        // 自宅外では修復ロジックを動かさない
+        guard isAtHome else { return }
         guard let deviceID = repairingDeviceID else {
             return
         }
@@ -1871,21 +1885,55 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     private func scheduleBackgroundTask() {
+        // 既存APIは後方互換のため残すが、自宅内のみ60秒でスケジュール
+        guard isAtHome else {
+            logger.info("Skip scheduling legacy BGTask (not at home)")
+            return
+        }
         let request = BGProcessingTaskRequest(identifier: backgroundTaskIdentifier_uwb)
         request.requiresNetworkConnectivity = false
-        request.requiresExternalPower = false // 充電要件を緩和
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // 1分後に短縮
-        
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
         do {
             try BGTaskScheduler.shared.submit(request)
-            logger.info("バックグラウンドタスクをスケジュール")
+            logger.info("レガシーBGタスクをスケジュール(60s)")
         } catch {
-            logger.error("バックグラウンドタスクのスケジュールに失敗: \(error)")
+            logger.error("レガシーBGタスクのスケジュールに失敗: \(error)")
         }
+    }
+
+    // UWB専用の5分間隔BGタスクスケジューラ（自宅内のみ）
+    private func scheduleUWBBackgroundTask(interval: TimeInterval = 300) {
+        guard isAtHome else {
+            logger.info("Skip scheduling UWB BGTask (not at home)")
+            return
+        }
+        let request = BGProcessingTaskRequest(identifier: backgroundTaskIdentifier_uwb)
+        request.requiresNetworkConnectivity = false
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: interval)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("UWB BGタスクをスケジュール(\(Int(interval))s)")
+        } catch {
+            logger.error("UWB BGタスクのスケジュールに失敗: \(error)")
+        }
+    }
+
+    private func cancelUWBBackgroundTask() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskIdentifier_uwb)
+        logger.info("UWB BGタスクをキャンセル")
     }
     
     private func handleBackgroundMaintenanceTask(task: BGProcessingTask) {
         logger.info("バックグラウンドメンテナンスタスク開始")
+        
+        // 自宅外なら即終了し、次回は自宅内で再スケジュール
+        guard isAtHome else {
+            logger.info("Skip BG task execution (not at home)")
+            task.setTaskCompleted(success: true)
+            return
+        }
         
         task.expirationHandler = {
             self.logger.warning("バックグラウンドメンテナンスタスク期限切れ")
@@ -1895,13 +1943,28 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         isProcessingBackgroundTask = true
         
+        // UWB再接続サイクルを試行（スキャン開始/NI修復）
+        ensureBackgroundUWBRecovery()
+        
         // バックグラウンドでの保守作業を実行
         performBackgroundMaintenance { success in
             self.isProcessingBackgroundTask = false
             task.setTaskCompleted(success: success)
             
             // 次のタスクをスケジュール
-            self.scheduleBackgroundTask()
+            self.scheduleUWBBackgroundTask()
+        }
+    }
+
+    // 自宅内でのUWB復旧処理（BGタスク起床時にも呼ぶ）
+    private func ensureBackgroundUWBRecovery() {
+        guard isAtHome else { return }
+        if !isScanning && !hasConnectedDevices {
+            startScanning()
+        }
+        if let device = discoveredDevices.first(where: { $0.status == .connected || $0.status == .paired || $0.status == .ranging }) {
+            checkAndRepairNISessionIfNeeded(for: device)
+            processBackgroundRepair()
         }
     }
     
@@ -3178,6 +3241,9 @@ extension UWBManager {
             }
         }
         
+        // ジオフェンス内に入ったら5分間隔のBGタスクを開始
+        scheduleUWBBackgroundTask()
+        
         // Screen Time制限の準備
         if let screenTimeManager = screenTimeManager {
             screenTimeManager.prepareForHomeEntry()
@@ -3191,6 +3257,11 @@ extension UWBManager {
         if #available(iOS 17.0, *) {
             stopBackgroundActivitySession()
         }
+        
+        // BGタスクのキャンセルと処理停止
+        cancelUWBBackgroundTask()
+        stopBackgroundHeartbeat()
+        endBackgroundTask()
         
         // Screen Time制限を無効化
         if let screenTimeManager = screenTimeManager {
