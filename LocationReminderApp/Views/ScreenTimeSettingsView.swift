@@ -909,6 +909,45 @@ class ScreenTimeManager: ObservableObject {
         
         completion(true)
     }
+    
+    // MARK: - ジオフェンシング連携メソッド
+    
+    func prepareForHomeEntry() {
+        print("\n=== 🏠 自宅エリア進入時のScreen Time準備 ===")
+        
+        // 現在のタスク状況を確認
+        guard let taskManager = taskManager else {
+            print("❌ TaskManagerが設定されていません")
+            return
+        }
+        
+        let pendingTasks = taskManager.getParentTasks().filter { !$0.isCompleted }
+        print("📋 未完了タスク数: \(pendingTasks.count)")
+        
+        // タスクが残っている場合は制限を準備
+        if !pendingTasks.isEmpty && isAuthorized {
+            print("🔒 タスク完了促進のため、制限準備完了")
+            // 実際の制限はUWB接続時に有効化される
+        } else {
+            print("✅ 未完了タスクなし、または認証なし - 制限準備スキップ")
+        }
+        
+        print("=======================================\n")
+    }
+    
+    func handleHomeExit() {
+        print("\n=== 🚪 自宅エリア退出時のScreen Time処理 ===")
+        
+        // 制限を無効化
+        if isRestrictionEnabled {
+            print("🔓 自宅退出のため制限を無効化")
+            disableRestrictionForSecureBubble()
+        } else {
+            print("ℹ️ 制限は既に無効化されています")
+        }
+        
+        print("=======================================\n")
+    }
 }
 
 struct ScreenTimeSettingsView: View {

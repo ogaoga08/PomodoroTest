@@ -33,6 +33,10 @@
 	<string>アプリ使用制限機能を提供するためにFamily Controlsを使用します。</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>自宅に帰った際のUWBデバイス自動接続とタスク管理のため、位置情報を使用します。バックグラウンドでも動作するため、常に許可が必要です。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>自宅に帰った際のUWBデバイス自動接続とタスク管理のため、位置情報を使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
@@ -40,6 +44,7 @@
 		<string>fetch</string>
 		<string>external-accessory</string>
 		<string>nearby-interaction</string>
+		<string>location</string>
 	</array>
 </dict>
 </plist>
