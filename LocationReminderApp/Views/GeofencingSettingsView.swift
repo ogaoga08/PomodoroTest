@@ -25,6 +25,8 @@ struct GeofencingSettingsView: View {
     )
     @StateObject private var locationManager = LocationManager()
     @State private var hasInitializedMainLocation = false
+    @ObservedObject var uwbManager = UWBManager.shared // UWBManagerを追加
+    @State private var geofenceDebugEnabled = true // デバッグ通知有効化
     
     var body: some View {
         NavigationView {
@@ -104,6 +106,120 @@ struct GeofencingSettingsView: View {
     
     @ViewBuilder
     private var informationSection: some View {
+        // 位置情報許可状態
+        if uwbManager.locationPermissionStatus != "常に許可" {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("位置情報の許可が必要です")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("現在の状態: \(uwbManager.locationPermissionStatus)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Text("ジオフェンス機能を使用するには、位置情報を「常に許可」に設定する必要があります。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Button(action: openSettings) {
+                        HStack {
+                            Image(systemName: "gear")
+                            Text("設定アプリを開く")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        
+        Section("ジオフェンシング状態") {
+            VStack(alignment: .leading, spacing: 12) {
+                // 位置情報許可状態
+                HStack {
+                    Image(systemName: uwbManager.locationPermissionStatus == "常に許可" ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundColor(uwbManager.locationPermissionStatus == "常に許可" ? .green : .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("位置情報許可")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(uwbManager.locationPermissionStatus)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // ジオフェンス有効状態
+                HStack {
+                    Image(systemName: uwbManager.geofencingEnabled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(uwbManager.geofencingEnabled ? .green : .red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ジオフェンス設定")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(uwbManager.geofencingEnabled ? "有効" : "無効")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // 位置情報監視状態（UWB接続時は一時停止）
+                HStack {
+                    Image(systemName: uwbManager.geofencingMonitoring ? "location.fill" : "location.slash.fill")
+                        .foregroundColor(uwbManager.geofencingMonitoring ? .blue : .gray)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("位置情報監視")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(uwbManager.geofencingMonitoring ? "動作中" : "一時停止中（UWB使用中）")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // 在宅状態
+                HStack {
+                    Image(systemName: uwbManager.isAtHome ? "house.fill" : "house")
+                        .foregroundColor(uwbManager.isAtHome ? .blue : .gray)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("在宅状態")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text(uwbManager.isAtHome ? "自宅内" : "不在")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                // デバッグ通知トグル
+                Toggle(isOn: $geofenceDebugEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("デバッグ通知")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("ジオフェンス進入/退出時に通知")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .onChange(of: geofenceDebugEnabled) { newValue in
+                    uwbManager.setGeofenceDebugNotification(enabled: newValue)
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        
         Section("ジオフェンシングについて") {
             VStack(alignment: .leading, spacing: 12) {
                 InfoRowView(
@@ -196,16 +312,38 @@ struct GeofencingSettingsView: View {
         if let savedAddress = UserDefaults.standard.string(forKey: "homeAddress") {
             homeAddress = savedAddress
         }
+        
+        // デバッグ通知設定を読み込み
+        if UserDefaults.standard.object(forKey: "geofenceDebugNotificationEnabled") != nil {
+            geofenceDebugEnabled = UserDefaults.standard.bool(forKey: "geofenceDebugNotificationEnabled")
+        }
     }
     
     private func saveHomeLocation() {
         guard let location = homeLocation else { return }
         UserDefaults.standard.set(location.latitude, forKey: "homeLatitude")
         UserDefaults.standard.set(location.longitude, forKey: "homeLongitude")
+        
+        // UWBManagerに自宅位置を設定してジオフェンスを有効化
+        uwbManager.setHomeLocation(
+            coordinate: location,
+            address: homeAddress,
+            radius: geofenceRadius
+        )
+        
+        print("✅ ジオフェンス設定完了: \(homeAddress) (半径: \(geofenceRadius)m)")
     }
     
     private func saveHomeAddress() {
         UserDefaults.standard.set(homeAddress, forKey: "homeAddress")
+    }
+    
+    private func openSettings() {
+        if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+            if UIApplication.shared.canOpenURL(settingsUrl) {
+                UIApplication.shared.open(settingsUrl)
+            }
+        }
     }
 }
 

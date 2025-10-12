@@ -358,7 +358,10 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var homeLocationSet = false // 自宅位置が設定されているか
     @Published var isAtHome = false // 現在自宅にいるか
     @Published var geofencingEnabled = false // ジオフェンシングが有効か
+    @Published var geofencingMonitoring = false // ジオフェンシング監視が実際に動作しているか（UWB接続時は一時停止）
     @Published var locationPermissionStatus = "未設定" // 位置情報許可状態
+    @Published var geofenceDebugNotificationEnabled = true // ジオフェンスデバッグ通知が有効か
+    @Published var uwbPairingDebugNotificationEnabled = true // UWBペアリングデバッグ通知が有効か
     
     // TaskManagerへの参照を追加
     weak var taskManager: EventKitTaskManager?
@@ -399,6 +402,11 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var backgroundMaintenanceTimer: Timer?
     private var isProcessingBackgroundTask = false
     private let backgroundTaskIdentifier_uwb = "com.locationreminder.app.uwb.maintenance"
+    
+    // 指数バックオフ用のプロパティ
+    private var currentBGTaskInterval: TimeInterval = 60 // 初期値: 60秒（1分）
+    private let minBGTaskInterval: TimeInterval = 60 // 最小: 60秒（1分）
+    private let maxBGTaskInterval: TimeInterval = 3600 // 最大: 3600秒（60分）
     private var heartbeatTimer: Timer?
     private var lastBackgroundUpdate = Date()
     private var backgroundHeartbeatStartTime: Date?
@@ -411,7 +419,7 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     // ジオフェンシング関連
     private let locationManager_geo = CLLocationManager()
     private var homeCoordinate: CLLocationCoordinate2D?
-    private let homeRadius: CLLocationDistance = 100.0 // 100m範囲
+    private var homeRadius: CLLocationDistance = 100.0 // 100m範囲（デフォルト値）
     private let homeLocationKey = "home_location_coordinate"
     private var backgroundActivitySession: Any? // CLBackgroundActivitySession（iOS 17+）
     
@@ -475,6 +483,14 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let centralManager = self.centralManager else { return }
         
         logger.info("📱 接続開始: \(device.name)")
+        
+        // デバッグ通知: Bluetooth接続開始
+        sendUWBPairingDebugNotification(
+            title: "📱 UWB接続開始",
+            message: "Bluetooth接続を開始します",
+            deviceName: device.name
+        )
+        
         self.isConnecting = true
         device.status = .connected
         
@@ -518,6 +534,12 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             logger.info("🔓 手動切断によりScreenTime制限を自動解除")
             screenTimeManager.disableRestrictionForSecureBubble()
         }
+        
+        // UWB切断時にジオフェンス監視を再開
+        resumeGeofenceMonitoring()
+        
+        // BGタスク間隔をリセット（次回の再接続を素早く試みるため）
+        resetBackgroundTaskInterval()
         
         self.updateConnectionStatus()
     }
@@ -751,6 +773,13 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             device.status = DeviceStatus.paired
         }
         updateConnectionStatus()
+        
+        // デバッグ通知: ペアリング成功
+        sendUWBPairingDebugNotification(
+            title: "✅ UWBペアリング成功",
+            message: "デバイスとのペアリングが完了しました",
+            deviceName: device.name
+        )
         
         // デバイス情報を保存
         saveDeviceInfo(device)
@@ -1443,12 +1472,15 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private func setupLocationServices() {
         locationManager_geo.delegate = self
         locationManager_geo.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager_geo.allowsBackgroundLocationUpdates = false
+        locationManager_geo.allowsBackgroundLocationUpdates = true
+        locationManager_geo.pausesLocationUpdatesAutomatically = false
+        locationManager_geo.showsBackgroundLocationIndicator = false
         
         // 位置情報許可状態をチェック
         updateLocationPermissionStatus()
         
-        logger.info("位置情報サービスの設定完了")
+        logger.info("✅ 位置情報サービスの設定完了")
+        logger.info("📍 現在の位置情報許可状態: \(self.locationPermissionStatus)")
     }
     
     private func loadHomeLocation() {
@@ -1457,6 +1489,25 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             homeCoordinate = coordinateData.coordinate
             homeLocationSet = true
             logger.info("保存された自宅位置を読み込み: \(coordinateData.latitude), \(coordinateData.longitude)")
+            
+            // 半径を読み込み（デフォルト: 100m）
+            if let savedRadius = userDefaults.object(forKey: "homeRadius") as? Double {
+                homeRadius = savedRadius
+                logger.info("保存された半径を読み込み: \(savedRadius)m")
+            }
+            
+            // デバッグ通知設定を読み込み（デフォルト: true）
+            if userDefaults.object(forKey: "geofenceDebugNotificationEnabled") != nil {
+                geofenceDebugNotificationEnabled = userDefaults.bool(forKey: "geofenceDebugNotificationEnabled")
+            }
+            
+            // UWBペアリングデバッグ通知設定を読み込み（デフォルト: true）
+            if userDefaults.object(forKey: "uwbPairingDebugNotificationEnabled") != nil {
+                uwbPairingDebugNotificationEnabled = userDefaults.bool(forKey: "uwbPairingDebugNotificationEnabled")
+            }
+            
+            // ジオフェンス監視を設定
+            setupGeofencing()
         }
     }
     
@@ -1474,6 +1525,31 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         setupGeofencing()
         
         logger.info("自宅位置を設定: \(coordinate.latitude), \(coordinate.longitude)")
+    }
+    
+    /// オーバーロード版: address と radius も設定
+    func setHomeLocation(coordinate: CLLocationCoordinate2D, address: String, radius: Double) {
+        logger.info("🏠 自宅位置設定: \(address) (半径: \(radius)m)")
+        
+        // 座標と半径を設定
+        homeCoordinate = coordinate
+        homeRadius = radius
+        homeLocationSet = true
+        
+        // 座標を保存（既存の形式）
+        let coordinateData = CoordinateData(coordinate: coordinate)
+        if let data = try? JSONEncoder().encode(coordinateData) {
+            UserDefaults.standard.set(data, forKey: homeLocationKey)
+        }
+        
+        // 追加情報も保存
+        userDefaults.set(address, forKey: "homeAddress")
+        userDefaults.set(radius, forKey: "homeRadius")
+        
+        // ジオフェンシング監視を設定
+        setupGeofencing()
+        
+        logger.info("✅ ジオフェンス設定完了")
     }
     
     func requestLocationPermission() {
@@ -1502,14 +1578,25 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     private func setupGeofencing() {
-        guard let homeCoordinate = homeCoordinate,
-              locationManager_geo.authorizationStatus == .authorizedAlways else {
-            logger.info("ジオフェンシング設定不可: 自宅位置未設定または許可不足")
+        logger.info("🔧 setupGeofencing 呼び出し")
+        logger.info("   自宅位置設定: \(self.homeCoordinate != nil ? "✅" : "❌")")
+        logger.info("   位置情報許可: \(self.locationPermissionStatus)")
+        
+        guard let homeCoordinate = homeCoordinate else {
+            logger.warning("⚠️ ジオフェンシング設定不可: 自宅位置未設定")
+            return
+        }
+        
+        guard locationManager_geo.authorizationStatus == .authorizedAlways else {
+            logger.warning("⚠️ ジオフェンシング設定不可: 位置情報が「常に許可」ではありません")
+            logger.warning("   現在の許可状態: \(self.locationPermissionStatus)")
+            logger.warning("   設定アプリで「常に許可」に変更してください")
             return
         }
         
         // 既存の監視を停止
         locationManager_geo.monitoredRegions.forEach { region in
+            logger.info("🛑 既存のジオフェンス監視を停止: \(region.identifier)")
             locationManager_geo.stopMonitoring(for: region)
         }
         
@@ -1527,10 +1614,15 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         homeRegion.notifyOnExit = true
         
         locationManager_geo.startMonitoring(for: homeRegion)
-        logger.info("従来のジオフェンシング設定完了")
+        logger.info("従来のジオフェンシング設定完了 (半径: \(self.homeRadius)m)")
+        
+        // 現在の状態を即座に確認
+        locationManager_geo.requestState(for: homeRegion)
+        logger.info("ジオフェンス状態確認リクエスト送信")
         
         DispatchQueue.main.async {
             self.geofencingEnabled = true
+            self.geofencingMonitoring = true // 監視も有効化
         }
     }
     
@@ -1902,21 +1994,58 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
 
-    // UWB専用の5分間隔BGタスクスケジューラ（自宅内のみ）
-    private func scheduleUWBBackgroundTask(interval: TimeInterval = 300) {
+    // UWB専用BGタスクスケジューラ（指数バックオフ方式）
+    // 初回: 1分 → 2分 → 4分 → 8分 → 16分 → 32分 → 最大60分
+    private func scheduleUWBBackgroundTask(interval: TimeInterval? = nil) {
         guard isAtHome else {
             logger.info("Skip scheduling UWB BGTask (not at home)")
             return
         }
+        
+        // 明示的に間隔が指定されている場合はそれを使用（リセット用）
+        let actualInterval: TimeInterval
+        if let interval = interval {
+            actualInterval = interval
+            currentBGTaskInterval = interval
+        } else {
+            actualInterval = currentBGTaskInterval
+        }
+        
         let request = BGProcessingTaskRequest(identifier: backgroundTaskIdentifier_uwb)
         request.requiresNetworkConnectivity = false
         request.requiresExternalPower = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: interval)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: actualInterval)
+        
         do {
             try BGTaskScheduler.shared.submit(request)
-            logger.info("UWB BGタスクをスケジュール(\(Int(interval))s)")
+            let minutes = Int(actualInterval / 60)
+            let seconds = Int(actualInterval.truncatingRemainder(dividingBy: 60))
+            if minutes > 0 {
+                logger.info("📅 UWB BGタスクをスケジュール: \(minutes)分\(seconds > 0 ? "\(seconds)秒" : "")")
+            } else {
+                logger.info("📅 UWB BGタスクをスケジュール: \(seconds)秒")
+            }
         } catch {
-            logger.error("UWB BGタスクのスケジュールに失敗: \(error)")
+            logger.error("❌ UWB BGタスクのスケジュールに失敗: \(error)")
+        }
+    }
+    
+    /// BGタスク間隔を次の値に増やす（指数バックオフ）
+    private func increaseBackgroundTaskInterval() {
+        let nextInterval = min(currentBGTaskInterval * 2, maxBGTaskInterval)
+        if nextInterval != currentBGTaskInterval {
+            currentBGTaskInterval = nextInterval
+            logger.info("⏱️ BGタスク間隔を延長: \(Int(self.currentBGTaskInterval / 60))分")
+        } else {
+            logger.info("⏱️ BGタスク間隔は最大値(\(Int(self.maxBGTaskInterval / 60))分)に到達")
+        }
+    }
+    
+    /// BGタスク間隔を初期値にリセット
+    private func resetBackgroundTaskInterval() {
+        if currentBGTaskInterval != minBGTaskInterval {
+            currentBGTaskInterval = minBGTaskInterval
+            logger.info("🔄 BGタスク間隔をリセット: \(Int(self.minBGTaskInterval / 60))分")
         }
     }
 
@@ -1950,6 +2079,14 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         performBackgroundMaintenance { success in
             self.isProcessingBackgroundTask = false
             task.setTaskCompleted(success: success)
+            
+            // 成功した場合は間隔を延長（指数バックオフ）
+            if success {
+                self.increaseBackgroundTaskInterval()
+            } else {
+                // 失敗時は間隔をリセット
+                self.resetBackgroundTaskInterval()
+            }
             
             // 次のタスクをスケジュール
             self.scheduleUWBBackgroundTask()
@@ -2307,14 +2444,21 @@ extension UWBManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         logger.error("デバイス接続失敗: \(error?.localizedDescription ?? "Unknown error")")
         
-        DispatchQueue.main.async {
-            self.isConnecting = false
-        }
-        
         if let device = findDevice(peripheral: peripheral) {
+            // デバッグ通知: Bluetooth接続失敗
+            sendUWBPairingDebugNotification(
+                title: "❌ UWB接続失敗",
+                message: "Bluetooth接続に失敗しました",
+                deviceName: device.name
+            )
+            
             DispatchQueue.main.async {
                 device.status = DeviceStatus.discovered
             }
+        }
+        
+        DispatchQueue.main.async {
+            self.isConnecting = false
         }
     }
     
@@ -2495,6 +2639,13 @@ extension UWBManager: NISessionDelegate {
         
         guard let device = targetDevice else { return }
         
+        // デバッグ通知: NIセッション開始
+        sendUWBPairingDebugNotification(
+            title: "🔄 UWBペアリング開始",
+            message: "NIセッション設定を送信します",
+            deviceName: device.name
+        )
+        
         // 設定データを送信
         var message = Data([MessageId.configureAndStart.rawValue])
         message.append(shareableConfigurationData)
@@ -2545,6 +2696,11 @@ extension UWBManager: NISessionDelegate {
         
         updateConnectionStatus()
         
+        // UWBで距離計測できているので、ジオフェンス監視を一時停止（初回のみ）
+        if geofencingMonitoring {
+            pauseGeofenceMonitoring()
+        }
+        
         // Secure bubble判定を実行
         checkSecureBubbleStatus(distance: distance, device: device)
     }
@@ -2591,6 +2747,13 @@ extension UWBManager: NISessionDelegate {
                 
                 // デバイス状態をリセット
                 if let device = findDevice(uniqueID: deviceID) {
+                    // デバッグ通知: ペアリング切断
+                    sendUWBPairingDebugNotification(
+                        title: "⚠️ UWBセッション切断",
+                        message: "NIセッションが無効化されました",
+                        deviceName: device.name
+                    )
+                    
                     DispatchQueue.main.async {
                         device.distance = nil
                         if device.status == DeviceStatus.ranging {
@@ -2602,6 +2765,12 @@ extension UWBManager: NISessionDelegate {
                         self.previousSecureBubbleStatus = false
                     }
                     updateConnectionStatus()
+                    
+                    // UWBセッションが切断されたので、ジオフェンス監視を再開
+                    resumeGeofenceMonitoring()
+                    
+                    // BGタスク間隔をリセット（次回の再接続を素早く試みるため）
+                    resetBackgroundTaskInterval()
                     
                     // NISession切断時にScreenTime制限を自動解除
                     if let screenTimeManager = screenTimeManager {
@@ -2642,49 +2811,6 @@ struct UWBSettingsView: View {
                         .padding(.horizontal)
                 }
                 
-                // UWB許可状態表示
-                VStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "wave.3.right")
-                            .foregroundColor(niPermissionColor)
-                        Text("Nearby Interaction: \(uwbManager.niPermissionStatus)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        
-                        if uwbManager.niPermissionStatus == "未確認" || uwbManager.niPermissionStatus == "確認中..." || uwbManager.niPermissionStatus == "デバイス接続時に確認" {
-                            Button("機能確認") {
-                                uwbManager.requestNearbyInteractionPermission()
-                            }
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    
-                    // 明示的なNearby Interaction許可要求ボタン
-                    if uwbManager.niPermissionStatus != "許可済み" {
-                        Button(action: {
-                            uwbManager.requestNearbyInteractionPermission()
-                        }) {
-                            HStack {
-                                Image(systemName: "location.circle")
-                                Text("Nearby Interaction許可を要求")
-                            }
-                            .font(.subheadline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(Color.orange)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .padding(.horizontal)
-                    }
-                }
-                .padding(.horizontal)
                 
                 // UWB状態表示
                 if uwbManager.isUWBActive {
@@ -2734,87 +2860,7 @@ struct UWBSettingsView: View {
                     .padding(.horizontal)
                 }
                 
-                // ジオフェンシング設定セクション
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "location.circle")
-                            .foregroundColor(.blue)
-                        Text("ジオフェンシング設定")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                        Spacer()
-                    }
-                    
-                    // 位置情報許可状態
-                    HStack {
-                        Image(systemName: "location")
-                            .foregroundColor(locationPermissionColor)
-                        Text("位置情報許可: \(uwbManager.locationPermissionStatus)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        
-                        if uwbManager.locationPermissionStatus != "常に許可" {
-                            Button("許可要求") {
-                                uwbManager.requestLocationPermission()
-                            }
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    
-                    // 自宅位置設定状態
-                    HStack {
-                        Image(systemName: "house")
-                            .foregroundColor(uwbManager.homeLocationSet ? .green : .gray)
-                        Text("自宅位置: \(uwbManager.homeLocationSet ? "設定済み" : "未設定")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        
-                        if !uwbManager.homeLocationSet {
-                            Button("現在地を設定") {
-                                setCurrentLocationAsHome()
-                            }
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                    }
-                    
-                    // ジオフェンシング状態
-                    HStack {
-                        Image(systemName: uwbManager.geofencingEnabled ? "checkmark.circle.fill" : "xmark.circle")
-                            .foregroundColor(uwbManager.geofencingEnabled ? .green : .gray)
-                        Text("ジオフェンシング: \(uwbManager.geofencingEnabled ? "有効" : "無効")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    
-                    // 現在の在宅状態
-                    if uwbManager.geofencingEnabled {
-                        HStack {
-                            Image(systemName: uwbManager.isAtHome ? "house.fill" : "location")
-                                .foregroundColor(uwbManager.isAtHome ? .green : .blue)
-                            Text("現在の状態: \(uwbManager.isAtHome ? "自宅内" : "外出中")")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                    }
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
-                .padding(.horizontal)
+                
                 
                 // 通知設定
                 HStack {
@@ -2827,6 +2873,28 @@ struct UWBSettingsView: View {
                     
                     Toggle("", isOn: $uwbManager.notificationsEnabled)
                         .scaleEffect(0.8)
+                }
+                .padding(.horizontal)
+                
+                // UWBペアリングデバッグ通知設定
+                HStack {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundColor(uwbManager.uwbPairingDebugNotificationEnabled ? .blue : .gray)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("UWBペアリング通知")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("接続開始・成功・失敗時に通知")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+                    Spacer()
+                    
+                    Toggle("", isOn: Binding(
+                        get: { uwbManager.uwbPairingDebugNotificationEnabled },
+                        set: { uwbManager.setUWBPairingDebugNotification(enabled: $0) }
+                    ))
+                    .scaleEffect(0.8)
                 }
                 .padding(.horizontal)
                 
@@ -2990,71 +3058,7 @@ struct UWBSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
     
-    private var niPermissionColor: Color {
-        switch uwbManager.niPermissionStatus {
-        case "許可済み":
-            return .green
-        case "拒否", "エラー", "非対応":
-            return .red
-        case "許可要求中...", "確認中...":
-            return .orange
-        case "デバイス接続時に確認":
-            return .blue
-        default:
-            return .gray
-        }
-    }
     
-    private var locationPermissionColor: Color {
-        switch uwbManager.locationPermissionStatus {
-        case "常に許可":
-            return .green
-        case "使用中のみ許可":
-            return .orange
-        case "拒否", "制限中":
-            return .red
-        default:
-            return .gray
-        }
-    }
-    
-    private func setCurrentLocationAsHome() {
-        print("🏠 現在地を設定ボタンが押されました")
-        let manager = CLLocationManager()
-        
-        print("📍 現在の位置情報許可状態: \(manager.authorizationStatus.rawValue)")
-        
-        // 現在地取得の許可をチェック
-        guard manager.authorizationStatus == .authorizedWhenInUse || 
-              manager.authorizationStatus == .authorizedAlways else {
-            print("❌ 位置情報の許可が必要です。許可を要求します。")
-            uwbManager.requestLocationPermission()
-            return
-        }
-        
-        print("✅ 位置情報の許可が確認されました。現在地を取得します。")
-        
-        // delegateを設定して現在地を取得
-        let locationGetter = CurrentLocationGetter { coordinate in
-            print("📍 現在地を取得しました: 緯度 \(coordinate.latitude), 経度 \(coordinate.longitude)")
-            DispatchQueue.main.async {
-                // ホーム位置として設定（UWBManagerの既存メソッドを使用）
-                print("🏠 ホーム位置として設定中...")
-                self.uwbManager.setHomeLocation(coordinate)
-                print("✅ ホーム位置が設定されました")
-                
-                // 完了後に参照をクリア
-                self.uwbManager.currentLocationGetter = nil
-            }
-        }
-        
-        manager.delegate = locationGetter
-        manager.requestLocation()
-        print("🔍 位置情報の取得をリクエストしました")
-        
-        // CurrentLocationGetterの参照を保持（重要：ガベージコレクションを防ぐ）
-        uwbManager.currentLocationGetter = locationGetter
-    }
     
     private var bluetoothStateColor: Color {
         switch uwbManager.bluetoothState {
@@ -3196,8 +3200,31 @@ extension UWBManager {
         updateLocationPermissionStatus()
     }
     
+    func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
+        logger.info("🔍 ジオフェンス状態判定: \(region.identifier) - \(state == .inside ? "内部" : state == .outside ? "外部" : "不明")")
+        
+        if region.identifier == "home" {
+            switch state {
+            case .inside:
+                logger.info("✅ 現在ジオフェンス内にいます")
+                DispatchQueue.main.async {
+                    self.isAtHome = true
+                }
+                handleHomeEntry()
+            case .outside:
+                logger.info("❌ 現在ジオフェンス外にいます")
+                DispatchQueue.main.async {
+                    self.isAtHome = false
+                }
+                handleHomeExit()
+            case .unknown:
+                logger.info("⚠️ ジオフェンス状態不明")
+            }
+        }
+    }
+    
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
-        logger.info("ジオフェンス進入: \(region.identifier)")
+        logger.info("🏠 ジオフェンス進入: \(region.identifier)")
         
         if region.identifier == "home" {
             DispatchQueue.main.async {
@@ -3210,7 +3237,7 @@ extension UWBManager {
     }
     
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
-        logger.info("ジオフェンス退出: \(region.identifier)")
+        logger.info("🚪 ジオフェンス退出: \(region.identifier)")
         
         if region.identifier == "home" {
             DispatchQueue.main.async {
@@ -3223,26 +3250,57 @@ extension UWBManager {
     }
     
     func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
-        logger.error("ジオフェンス監視失敗: \(error)")
+        logger.error("❌ ジオフェンス監視失敗: \(error)")
+        DispatchQueue.main.async {
+            self.geofencingEnabled = false
+        }
+    }
+    
+    func locationManager(_ manager: CLLocationManager, didStartMonitoringFor region: CLRegion) {
+        logger.info("✅ ジオフェンス監視開始: \(region.identifier)")
     }
     
     private func handleHomeEntry() {
         logger.info("🏠 自宅エリア進入 - UWB再接続開始")
+        
+        // デバッグ通知を送信
+        if geofenceDebugNotificationEnabled {
+            sendGeofenceDebugNotification(
+                title: "🏠 ジオフェンス進入",
+                message: "自宅エリアに入りました。UWB再接続を開始します。"
+            )
+        }
         
         // バックグラウンドアクティビティセッションを開始（iOS 17+）
         if #available(iOS 17.0, *) {
             startBackgroundActivitySession()
         }
         
-        // UWBスキャンを開始
+        // UWBスキャンを必ず開始（接続済みデバイスがあっても再スキャン）
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            if !self.isScanning && !self.hasConnectedDevices {
+            self.logger.info("🔄 帰宅時UWB自動接続処理開始")
+            
+            // スキャン中でない場合はスキャンを開始
+            if !self.isScanning {
+                self.logger.info("📡 UWBスキャン開始（自動再接続）")
                 self.startScanning()
+            } else {
+                self.logger.info("ℹ️ 既にスキャン中のため、スキャン継続")
+            }
+            
+            // 既に接続されているデバイスがあれば再ペアリングを試みる
+            if self.hasConnectedDevices {
+                self.logger.info("🔌 接続済みデバイスあり - 再ペアリング確認")
+                for device in self.discoveredDevices where device.status == .connected {
+                    self.logger.info("🔄 デバイス[\(device.id)]\(device.name)の再ペアリング開始")
+                    self.checkAndRepairNISessionIfNeeded(for: device)
+                }
             }
         }
         
-        // ジオフェンス内に入ったら5分間隔のBGタスクを開始
-        scheduleUWBBackgroundTask()
+        // ジオフェンス内に入ったらBGタスクを開始（1分から開始、指数バックオフで徐々に延長）
+        resetBackgroundTaskInterval() // 間隔を1分にリセット
+        scheduleUWBBackgroundTask() // 現在の間隔でスケジュール
         
         // Screen Time制限の準備
         if let screenTimeManager = screenTimeManager {
@@ -3253,6 +3311,14 @@ extension UWBManager {
     private func handleHomeExit() {
         logger.info("🚪 自宅エリア退出 - バックグラウンドモード移行")
         
+        // デバッグ通知を送信
+        if geofenceDebugNotificationEnabled {
+            sendGeofenceDebugNotification(
+                title: "🚪 ジオフェンス退出",
+                message: "自宅エリアから離れました。Screen Time制限を無効化します。"
+            )
+        }
+        
         // バックグラウンドアクティビティセッションを終了
         if #available(iOS 17.0, *) {
             stopBackgroundActivitySession()
@@ -3262,6 +3328,9 @@ extension UWBManager {
         cancelUWBBackgroundTask()
         stopBackgroundHeartbeat()
         endBackgroundTask()
+        
+        // BGタスク間隔をリセット（次回の帰宅時に備える）
+        resetBackgroundTaskInterval()
         
         // Screen Time制限を無効化
         if let screenTimeManager = screenTimeManager {
@@ -3281,6 +3350,135 @@ extension UWBManager {
             session.invalidate()
             backgroundActivitySession = nil
             logger.info("バックグラウンドアクティビティセッション終了")
+        }
+    }
+    
+    // MARK: - ジオフェンス設定メソッド
+    
+    /// ジオフェンス監視を一時停止（UWB接続時に呼び出される）
+    private func pauseGeofenceMonitoring() {
+        guard geofencingEnabled, geofencingMonitoring else {
+            logger.info("ℹ️ ジオフェンス監視は既に停止しています")
+            return
+        }
+        
+        logger.info("⏸️ ジオフェンス監視を一時停止（UWB接続により位置情報監視不要）")
+        
+        // 全てのジオフェンス監視を停止
+        locationManager_geo.monitoredRegions.forEach { region in
+            locationManager_geo.stopMonitoring(for: region)
+        }
+        
+        DispatchQueue.main.async {
+            self.geofencingMonitoring = false
+        }
+        
+        logger.info("✅ 位置情報の「常に使用」ラベルが非表示になります")
+    }
+    
+    /// ジオフェンス監視を再開（UWB切断時に呼び出される）
+    private func resumeGeofenceMonitoring() {
+        guard geofencingEnabled, !geofencingMonitoring else {
+            logger.info("ℹ️ ジオフェンス監視は既に動作しています")
+            return
+        }
+        
+        guard let homeCoordinate = homeCoordinate else {
+            logger.warning("⚠️ ジオフェンス再開不可: 自宅位置未設定")
+            return
+        }
+        
+        logger.info("▶️ ジオフェンス監視を再開（UWB切断により位置情報監視が必要）")
+        
+        // ジオフェンス監視を再開
+        let homeRegion = CLCircularRegion(
+            center: homeCoordinate,
+            radius: homeRadius,
+            identifier: "home"
+        )
+        homeRegion.notifyOnEntry = true
+        homeRegion.notifyOnExit = true
+        
+        locationManager_geo.startMonitoring(for: homeRegion)
+        
+        DispatchQueue.main.async {
+            self.geofencingMonitoring = true
+        }
+        
+        logger.info("✅ ジオフェンス監視再開完了")
+    }
+    
+    /// ジオフェンスデバッグ通知の有効/無効を切り替え
+    func setGeofenceDebugNotification(enabled: Bool) {
+        logger.info("🔔 ジオフェンスデバッグ通知: \(enabled ? "有効" : "無効")")
+        
+        DispatchQueue.main.async {
+            self.geofenceDebugNotificationEnabled = enabled
+        }
+        
+        // UserDefaultsに保存
+        userDefaults.set(enabled, forKey: "geofenceDebugNotificationEnabled")
+    }
+    
+    /// UWBペアリングデバッグ通知の有効/無効を切り替え
+    func setUWBPairingDebugNotification(enabled: Bool) {
+        logger.info("🔔 UWBペアリングデバッグ通知: \(enabled ? "有効" : "無効")")
+        
+        DispatchQueue.main.async {
+            self.uwbPairingDebugNotificationEnabled = enabled
+        }
+        
+        // UserDefaultsに保存
+        userDefaults.set(enabled, forKey: "uwbPairingDebugNotificationEnabled")
+    }
+    
+    /// ジオフェンスデバッグ通知を送信
+    private func sendGeofenceDebugNotification(title: String, message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = message
+        content.sound = .default
+        content.badge = 0
+        
+        // 通知をすぐに送信
+        let request = UNNotificationRequest(
+            identifier: "geofence_debug_\(UUID().uuidString)",
+            content: content,
+            trigger: nil // すぐに送信
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                self.logger.error("ジオフェンスデバッグ通知送信失敗: \(error)")
+            } else {
+                self.logger.info("ジオフェンスデバッグ通知送信成功: \(title)")
+            }
+        }
+    }
+    
+    /// UWBペアリングデバッグ通知を送信
+    private func sendUWBPairingDebugNotification(title: String, message: String, deviceName: String = "") {
+        guard uwbPairingDebugNotificationEnabled else { return }
+        
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = deviceName.isEmpty ? message : "[\(deviceName)] \(message)"
+        content.sound = .default
+        content.badge = 0
+        
+        // 通知をすぐに送信
+        let request = UNNotificationRequest(
+            identifier: "uwb_pairing_debug_\(UUID().uuidString)",
+            content: content,
+            trigger: nil // すぐに送信
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                self.logger.error("UWBペアリングデバッグ通知送信失敗: \(error)")
+            } else {
+                self.logger.info("UWBペアリングデバッグ通知送信成功: \(title)")
+            }
         }
     }
 }
