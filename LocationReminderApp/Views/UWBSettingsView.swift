@@ -434,7 +434,8 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var repairAttempts: [Int: Int] = [:]  // デバイス毎の再試行回数
     private let maxRepairAttempts = 10  // 最大再試行回数
     private let baseRepairInterval: TimeInterval = 2.0  // 基本再試行間隔（秒）
-    private let maxRepairInterval: TimeInterval = 60.0  // 最大再試行間隔（秒）
+    private let maxRepairInterval: TimeInterval = 60.0  // 最大再試行間隔（秒・フォアグラウンド）
+    // バックグラウンド: 最大20秒間隔、各試行は個別のbackgroundTaskで保護
     
     // バックグラウンド再ペアリング管理用（1台限定）
     private var repairingDeviceID: Int? = nil  // 再ペアリングが必要なデバイスID（1台のみ）
@@ -1147,14 +1148,22 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // バックグラウンドモードの場合は単一デバイス変数に設定
         if isBackgroundMode {
             repairingDeviceID = deviceID
+            logger.info("🔄 バックグラウンドで再ペアリング開始: \(device.name)")
+            
+            // デバッグ通知: バックグラウンド再ペアリング開始
+            sendUWBPairingDebugNotification(
+                title: "🔄 再ペアリング開始",
+                message: "バックグラウンドで再接続を試みています",
+                deviceName: device.name
+            )
+        } else {
+            logger.info("🔄 フォアグラウンドで再ペアリング開始: \(device.name)")
         }
         
-        // フォアグラウンドの場合は即座に再ペアリング試行（固定遅延）
+        // 即座に再ペアリング試行（固定遅延）
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
             self.attemptNISessionRepair(for: device)
         }
-        
-        logger.info("🔄 再ペアリング開始: \(device.name)")
     }
     
     private func shouldAttemptRepair(for error: Error) -> Bool {
@@ -1193,6 +1202,17 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         let currentAttempt = repairAttempts[deviceID, default: 0] + 1
         logger.info("🔄 再ペアリング試行 #\(currentAttempt): \(device.name)")
         
+        // バックグラウンドモードの場合は、このrepair試行用にbackgroundTaskを開始
+        let repairBackgroundTaskID: UIBackgroundTaskIdentifier
+        if isBackgroundMode {
+            repairBackgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "NI Session Repair #\(currentAttempt)") {
+                self.logger.warning("⚠️ 再ペアリングバックグラウンドタスクの有効期限切れ")
+            }
+            logger.info("🔵 再ペアリング用バックグラウンドタスク開始: \(repairBackgroundTaskID.rawValue)")
+        } else {
+            repairBackgroundTaskID = .invalid
+        }
+        
         // デバイスが切断されている場合は先にBluetooth再接続を試行
         if device.peripheral.state != .connected {
             let options: [String: Any] = [
@@ -1203,6 +1223,11 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             centralManager?.connect(device.peripheral, options: options)
             // 再接続待ちのため、少し後に再ペアリングを再試行
             scheduleNextRepairAttempt(for: device, delay: 5.0)
+            
+            // バックグラウンドタスクを終了
+            if repairBackgroundTaskID != .invalid {
+                UIApplication.shared.endBackgroundTask(repairBackgroundTaskID)
+            }
             return
         }
         
@@ -1226,11 +1251,20 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         logger.info("🔄 NISession再開始完了: \(device.name)")
         
+        // 試行回数を更新（次の試行のために）
+        repairAttempts[deviceID] = currentAttempt
+        
         // 成功の可能性があるので、少し待ってから結果を確認
         let verificationDelay: TimeInterval = self.isBackgroundMode ? 5.0 : 3.0
         
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + verificationDelay) {
             self.verifyRepairSuccess(for: device)
+            
+            // バックグラウンドタスクを終了
+            if repairBackgroundTaskID != .invalid {
+                self.logger.info("🔵 再ペアリング用バックグラウンドタスク終了: \(repairBackgroundTaskID.rawValue)")
+                UIApplication.shared.endBackgroundTask(repairBackgroundTaskID)
+            }
         }
     }
     
@@ -1294,6 +1328,15 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             // 成功と判定
             logger.info("✅ 再ペアリング成功: \(device.name)")
             
+            // バックグラウンドの場合は成功通知を送信
+            if isBackgroundMode {
+                sendUWBPairingDebugNotification(
+                    title: "✅ 再ペアリング成功",
+                    message: "バックグラウンドで再接続に成功しました",
+                    deviceName: device.name
+                )
+            }
+            
             // 🔧 修正: 再ペアリング成功後に距離計測を自動開始
             ensureDistanceMeasurementStarted(for: device)
             
@@ -1316,20 +1359,30 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         let currentAttempts = repairAttempts[deviceID, default: 0] + 1
         repairAttempts[deviceID] = currentAttempts
         
-        // 最大試行回数をチェック（フォアグラウンドのみ）
-        if !self.isBackgroundMode {
-            guard currentAttempts < maxRepairAttempts else {
-                stopRepairProcess(for: device)
-                return
+        // 最大試行回数をチェック
+        if currentAttempts >= maxRepairAttempts {
+            logger.warning("⚠️ 再ペアリング最大試行回数に到達: \(device.name)")
+            
+            // バックグラウンドの場合は失敗通知を送信
+            if isBackgroundMode {
+                sendUWBPairingDebugNotification(
+                    title: "⚠️ 再ペアリング失敗",
+                    message: "最大試行回数(\(maxRepairAttempts)回)に到達しました",
+                    deviceName: device.name
+                )
             }
+            
+            stopRepairProcess(for: device)
+            return
         }
         
-        // 指数バックオフで待機時間を計算（バックグラウンドでは長めの間隔）
-        let backoffMultiplier = self.isBackgroundMode ? 2.0 : 1.0
+        // 指数バックオフで待機時間を計算
+        // バックグラウンドでは30秒制限を考慮して短い間隔に設定
+        let backoffMultiplier = self.isBackgroundMode ? 1.0 : 1.0
         let calculatedDelay = baseRepairInterval * pow(2.0, Double(currentAttempts - 1)) * backoffMultiplier
         
-        // バックグラウンドでは最大間隔を長く設定（省電力のため）
-        let effectiveMaxInterval = self.isBackgroundMode ? 300.0 : maxRepairInterval  // BG: 5分, FG: 60秒
+        // バックグラウンドでは短い最大間隔を設定（バックグラウンドタスクの30秒制限を考慮）
+        let effectiveMaxInterval = self.isBackgroundMode ? 20.0 : maxRepairInterval  // BG: 20秒, FG: 60秒
         let waitTime = delay ?? min(effectiveMaxInterval, calculatedDelay)
         
         // バックグラウンドでのタイマー実行を改善
