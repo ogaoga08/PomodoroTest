@@ -7,7 +7,7 @@
 		<string>com.locationreminder.app.uwb.maintenance</string>
 		<string>com.locationreminder.app.screentime.monitoring</string>
 	</array>
-	<key>NSExtension</key>
+	<!-- <key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
 		<dict>
@@ -18,7 +18,7 @@
 		<string>com.apple.ManagedSettingsUI.ShieldConfiguration</string>
 		<key>NSExtensionPrincipalClass</key>
 		<string>LocationReminderApp.ShieldConfigurationExtension</string>
-	</dict>
+	</dict> -->
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>部屋への入退室状態を通知するために使用します。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
