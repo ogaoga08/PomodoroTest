@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var showingMenu = false
     @State private var showingPermissionOnboarding = false
     
+    // 初回起動判定用
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    
     // チェックボタンの遅延機能用
     @State private var pendingCompletions: [UUID: Timer] = [:]
     @State private var temporaryCompletedTasks: Set<UUID> = []
@@ -354,6 +357,16 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingPermissionOnboarding) {
             PermissionOnboardingView()
+                .onDisappear {
+                    // オンボーディング完了後にフラグを立てる
+                    hasCompletedOnboarding = true
+                    
+                    // Bluetooth delegateを有効化（オンボーディング完了後）
+                    uwbManager.enableBluetoothDelegate()
+                    
+                    // オンボーディング完了後に許可状態をチェック
+                    permissionManager.checkAllPermissionStatuses()
+                }
         }
         .onAppear {
             // 各マネージャー間の参照を設定
@@ -371,11 +384,20 @@ struct ContentView: View {
             permissionManager.uwbManager = uwbManager
             permissionManager.notificationManager = notificationManager
             
-            // 初回起動時に許可状態をチェック
-            permissionManager.checkAllPermissionStatuses()
-            
-            // オンボーディングは手動で開く場合のみ表示（各マネージャーの自動ダイアログを優先）
-            // 必要に応じて設定画面から手動でオンボーディングを開くことができる
+            // 初回起動時に自動的にオンボーディングを表示
+            if !hasCompletedOnboarding {
+                // 少し遅延させて表示（UIの初期化を待つ）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showingPermissionOnboarding = true
+                }
+            } else {
+                // オンボーディング完了済みの場合
+                // Bluetooth delegateを有効化
+                uwbManager.enableBluetoothDelegate()
+                
+                // 許可状態をチェック
+                permissionManager.checkAllPermissionStatuses()
+            }
         }
         .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
             // UWB状態が変化してから2秒待って処理を実行（チャタリング防止）

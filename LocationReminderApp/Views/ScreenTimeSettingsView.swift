@@ -142,15 +142,7 @@ class ScreenTimeManager: ObservableObject {
         // 認証状態の変化を監視
         setupAuthorizationMonitoring()
         
-        // 初回起動時に自動的に認証ダイアログを表示（PermissionManagerと併用）
-        if authorizationCenter.authorizationStatus == .notDetermined {
-            // PermissionManagerが管理していない場合のフォールバック
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                if self.authorizationCenter.authorizationStatus == .notDetermined {
-                    self.requestAuthorization()
-                }
-            }
-        }
+        // 自動リクエストはしない（オンボーディングで処理）
     }
     
     // 認証状態の監視を設定

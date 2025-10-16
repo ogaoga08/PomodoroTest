@@ -107,7 +107,7 @@ enum PermissionStatus {
 
 // 許可管理クラス
 @MainActor
-class PermissionManager: ObservableObject {
+class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = PermissionManager()
     
     @Published var permissionStatuses: [PermissionType: PermissionStatus] = [:]
@@ -122,9 +122,33 @@ class PermissionManager: ObservableObject {
     weak var notificationManager: NotificationManager?
     
     private let locationManager = CLLocationManager()
+    private var locationContinuation: CheckedContinuation<CLLocation?, Never>?
     
-    private init() {
-        checkAllPermissionStatuses()
+    private override init() {
+        super.init()
+        // 初期化時は状態チェックしない（オンボーディングで処理）
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+    
+    // CLLocationManagerDelegate
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        Task { @MainActor in
+            if let location = locations.last {
+                print("📍 位置情報更新: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+                locationContinuation?.resume(returning: location)
+                locationContinuation = nil
+                locationManager.stopUpdatingLocation()
+            }
+        }
+    }
+    
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor in
+            print("❌ 位置情報取得エラー: \(error.localizedDescription)")
+            locationContinuation?.resume(returning: nil)
+            locationContinuation = nil
+        }
     }
     
     // 全ての許可状態をチェック
@@ -175,14 +199,7 @@ class PermissionManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
             
-            // 5. Nearby Interaction許可
-            if permissionStatuses[.nearbyInteraction] == .notDetermined {
-                currentRequestingPermission = .nearbyInteraction
-                await requestNearbyInteractionPermission()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-            
-            // 6. スクリーンタイム許可（最後）
+            // 5. スクリーンタイム許可（最後）
             if permissionStatuses[.screenTime] == .notDetermined {
                 currentRequestingPermission = .screenTime
                 await requestScreenTimePermission()
@@ -200,31 +217,309 @@ class PermissionManager: ObservableObject {
     
     // 個別の許可要求メソッド
     private func requestRemindersPermission() async {
-        guard let taskManager = taskManager else { return }
+        guard let taskManager = taskManager else {
+            print("❌ PermissionManager: taskManagerが設定されていません")
+            return
+        }
+        
+        print("📝 PermissionManager: リマインダー許可をリクエスト")
+        
+        // 現在の状態を取得
+        let initialStatus = permissionStatuses[.reminders]
+        print("📝 初期状態: \(initialStatus)")
+        
+        // 許可をリクエスト
         taskManager.requestReminderAccess()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ダイアログが表示されるまで少し待機
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
+        
+        // ダイアログが表示されて応答されるまで待機（最大20秒）
+        for i in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkRemindersPermission()
+            
+            let currentStatus = permissionStatuses[.reminders]
+            if i % 4 == 0 { // 2秒ごとにログ出力
+                print("📝 リマインダー状態チェック (\(i/2)秒): \(currentStatus)")
+            }
+            
+            // 状態が変化したら完了
+            if currentStatus != initialStatus && currentStatus != .notDetermined {
+                print("✅ リマインダー許可完了: \(currentStatus)")
+                break
+            }
+        }
+        
+        // 最終状態を確認
         await checkRemindersPermission()
+        print("📝 リマインダー最終状態: \(permissionStatuses[.reminders] ?? .notDetermined)")
     }
     
     private func requestNotificationsPermission() async {
-        guard let notificationManager = notificationManager else { return }
+        guard let notificationManager = notificationManager else {
+            print("❌ PermissionManager: notificationManagerが設定されていません")
+            return
+        }
+        
+        print("🔔 PermissionManager: 通知許可をリクエスト")
+        
+        // 現在の状態を取得
+        let initialStatus = permissionStatuses[.notifications]
+        print("🔔 初期状態: \(initialStatus)")
+        
+        // 許可をリクエスト
         notificationManager.requestAuthorization()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ダイアログが表示されるまで少し待機
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
+        
+        // ダイアログが表示されて応答されるまで待機（最大20秒）
+        for i in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkNotificationsPermission()
+            
+            let currentStatus = permissionStatuses[.notifications]
+            if i % 4 == 0 { // 2秒ごとにログ出力
+                print("🔔 通知状態チェック (\(i/2)秒): \(currentStatus)")
+            }
+            
+            // 状態が変化したら完了
+            if currentStatus != initialStatus && currentStatus != .notDetermined {
+                print("✅ 通知許可完了: \(currentStatus)")
+                break
+            }
+        }
+        
+        // 最終状態を確認
         await checkNotificationsPermission()
+        print("🔔 通知最終状態: \(permissionStatuses[.notifications] ?? .notDetermined)")
     }
     
     private func requestLocationPermission() async {
+        print("📍 PermissionManager: 位置情報許可をリクエスト")
+        
+        // 現在の状態を取得
+        let initialStatus = permissionStatuses[.location]
+        print("📍 初期状態: \(initialStatus)")
+        
+        // まず「使用中の許可」を要求
         locationManager.requestWhenInUseAuthorization()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ダイアログが表示されるまで少し待機
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
+        
+        // ダイアログが表示されて応答されるまで待機（最大20秒）
+        for i in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkLocationPermission()
+            
+            let currentStatus = permissionStatuses[.location]
+            if i % 4 == 0 { // 2秒ごとにログ出力
+                print("📍 位置情報状態チェック (\(i/2)秒): \(currentStatus)")
+            }
+            
+            // 状態が変化したら次へ
+            if currentStatus != initialStatus && currentStatus != .notDetermined {
+                print("✅ 使用中の許可完了: \(currentStatus)")
+                break
+            }
+        }
+        
+        // 少し待機してから「常に許可」を要求
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
+        
+        print("📍 「常に許可」をリクエスト")
+        // 「常に許可」を要求
+        locationManager.requestAlwaysAuthorization()
+        
+        // 再度ダイアログが表示されて応答されるまで待機（最大20秒）
+        for i in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkLocationPermission()
+            
+            let currentStatus = permissionStatuses[.location]
+            if i % 4 == 0 { // 2秒ごとにログ出力
+                print("📍 常に許可状態チェック (\(i/2)秒): \(currentStatus)")
+            }
+        }
+        
+        // 最終状態を確認
         await checkLocationPermission()
+        let finalStatus = permissionStatuses[.location]
+        print("📍 位置情報最終状態: \(finalStatus)")
+        
+        // 位置情報許可が得られた場合、現在地をジオフェンス住所として自動登録
+        if finalStatus == .granted {
+            await setupGeofenceWithCurrentLocation()
+        }
+    }
+    
+    // 現在地をジオフェンス住所として自動登録
+    private func setupGeofenceWithCurrentLocation() async {
+        print("🏠 現在地をジオフェンス住所として自動登録します")
+        
+        guard let uwbManager = uwbManager else {
+            print("❌ uwbManagerが設定されていません")
+            return
+        }
+        
+        // 現在地を取得
+        let currentLocation = await getCurrentLocation()
+        
+        if let location = currentLocation {
+            print("🏠 現在地取得成功: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+            
+            // UWBManagerに現在地を自宅として設定
+            uwbManager.setHomeLocation(location.coordinate)
+            uwbManager.geofencingEnabled = true
+            print("✅ ジオフェンス設定完了")
+        } else {
+            print("⚠️ 現在地の取得に失敗しました")
+        }
+    }
+    
+    // 現在地を取得（async/await）
+    private func getCurrentLocation() async -> CLLocation? {
+        return await withCheckedContinuation { continuation in
+            self.locationContinuation = continuation
+            
+            // 位置情報の更新を開始
+            locationManager.startUpdatingLocation()
+            
+            // タイムアウト処理（10秒）
+            Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if self.locationContinuation != nil {
+                    print("⚠️ 位置情報取得タイムアウト")
+                    self.locationContinuation?.resume(returning: nil)
+                    self.locationContinuation = nil
+                    self.locationManager.stopUpdatingLocation()
+                }
+            }
+        }
     }
     
     private func requestBluetoothPermission() async {
         // Bluetoothの許可は実際のスキャン開始時に自動的に要求される
-        guard let uwbManager = uwbManager else { return }
+        guard let uwbManager = uwbManager else {
+            print("❌ PermissionManager: uwbManagerが設定されていません")
+            return
+        }
+        
+        print("📡 PermissionManager: Bluetooth許可をリクエスト")
+        
+        // 現在の状態を取得
+        let initialStatus = permissionStatuses[.bluetooth]
+        print("📡 初期状態: \(initialStatus)")
+        
+        // Bluetooth delegateを有効化（まだ有効化されていない場合）
+        uwbManager.enableBluetoothDelegate()
+        
+        // delegateが設定されるまで少し待機
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+        
+        // スキャンを開始してダイアログを表示
         uwbManager.startScanning()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ダイアログが表示されるまで少し待機
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
+        
+        // ダイアログが表示されて応答されるまで待機（最大20秒）
+        for i in 0..<40 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkBluetoothPermission()
+            
+            let currentStatus = permissionStatuses[.bluetooth]
+            if i % 4 == 0 { // 2秒ごとにログ出力
+                print("📡 Bluetooth状態チェック (\(i/2)秒): \(currentStatus)")
+            }
+            
+            // 状態が変化したら完了
+            if currentStatus != initialStatus && currentStatus != .notDetermined {
+                print("✅ Bluetooth許可完了: \(currentStatus)")
+                break
+            }
+        }
+        
+        // 最終状態を確認
         await checkBluetoothPermission()
+        let finalStatus = permissionStatuses[.bluetooth]
+        print("📡 Bluetooth最終状態: \(finalStatus)")
+        
+        // Bluetooth許可が得られた場合、UWBデバイスの自動セットアップを開始
+        if finalStatus == .granted {
+            await setupUWBDeviceAutomatically()
+        }
+    }
+    
+    // UWBデバイスの自動セットアップ（検出→接続→ペアリング→NIセッション開始）
+    private func setupUWBDeviceAutomatically() async {
+        print("🔵 UWBデバイスの自動セットアップを開始します")
+        
+        guard let uwbManager = uwbManager else {
+            print("❌ uwbManagerが設定されていません")
+            return
+        }
+        
+        // 既にスキャン中の場合はそのまま継続、そうでなければ開始
+        if !uwbManager.isScanning {
+            print("📡 UWBデバイスのスキャンを開始")
+            uwbManager.startScanning()
+        } else {
+            print("📡 既にスキャン中です")
+        }
+        
+        // デバイスが見つかるまで待機（最大30秒）
+        print("⏳ UWBデバイスの検出を待機中...")
+        for i in 0..<60 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            
+            // 発見されたデバイスをチェック
+            if !uwbManager.discoveredDevices.isEmpty {
+                let device = uwbManager.discoveredDevices[0]
+                print("✅ UWBデバイスを発見: \(device.name)")
+                
+                // デバイスに自動接続
+                print("🔌 デバイスに自動接続中...")
+                await MainActor.run {
+                    uwbManager.connectToDevice(device)
+                }
+                
+                // 接続とペアリングの完了を待機（最大60秒）
+                print("⏳ 接続とペアリングの完了を待機中...")
+                for j in 0..<120 {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+                    
+                    if j % 4 == 0 { // 2秒ごとにステータス確認
+                        print("📊 デバイスステータス: \(device.status.rawValue)")
+                    }
+                    
+                    // ranging状態（NIセッション開始済み）になったら完了
+                    if device.status == .ranging {
+                        print("✅ UWBデバイスのセットアップ完了！")
+                        print("   - 距離測定中: \(device.distance != nil ? String(format: "%.2fm", device.distance!) : "測定中...")")
+                        
+                        // スキャンを停止
+                        await MainActor.run {
+                            uwbManager.stopScanning()
+                        }
+                        return
+                    }
+                }
+                
+                print("⚠️ UWBセットアップがタイムアウトしました")
+                return
+            }
+            
+            // 10秒ごとに進捗をログ
+            if i % 20 == 0 && i > 0 {
+                print("⏳ デバイス検出待機中... (\(i/2)秒経過)")
+            }
+        }
+        
+        print("⚠️ UWBデバイスが見つかりませんでした（30秒間）")
+        print("💡 手動でUWB設定画面からデバイスをスキャンしてください")
     }
     
     private func requestNearbyInteractionPermission() async {
@@ -242,8 +537,25 @@ class PermissionManager: ObservableObject {
     
     private func requestScreenTimePermission() async {
         guard let screenTimeManager = screenTimeManager else { return }
+        
+        // 現在の状態を取得
+        let initialStatus = permissionStatuses[.screenTime]
+        
+        // 許可をリクエスト
         screenTimeManager.requestAuthorization()
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // ダイアログが表示されて応答されるまで待機（最大10秒）
+        for _ in 0..<20 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            await checkScreenTimePermission()
+            
+            // 状態が変化したら完了
+            if permissionStatuses[.screenTime] != initialStatus && permissionStatuses[.screenTime] != .notDetermined {
+                break
+            }
+        }
+        
+        // 最終状態を確認
         await checkScreenTimePermission()
     }
     
@@ -347,17 +659,31 @@ class PermissionManager: ObservableObject {
     }
     
     private func checkBluetoothPermission() async {
-        // Bluetoothの許可状態はCBCentralManagerの状態から推測
+        // Bluetoothの許可状態はCBCentralManagerの状態から確認
         guard let uwbManager = uwbManager else {
             permissionStatuses[.bluetooth] = .unavailable
             return
         }
         
         let permissionStatus: PermissionStatus
-        if uwbManager.isScanning || !uwbManager.discoveredDevices.isEmpty {
+        
+        switch uwbManager.bluetoothState {
+        case .poweredOn:
+            // Bluetoothが有効な場合は許可済み
             permissionStatus = .granted
-        } else {
-            // より詳細な状態チェックが必要な場合はCBCentralManagerの状態を確認
+        case .unauthorized:
+            // Bluetoothの許可が拒否された場合
+            permissionStatus = .denied
+        case .poweredOff:
+            // Bluetoothが無効（許可は得ているが電源オフ）
+            permissionStatus = .granted
+        case .unsupported:
+            // デバイスがBluetoothをサポートしていない
+            permissionStatus = .unavailable
+        case .unknown, .resetting:
+            // 状態が不明または初期化中
+            permissionStatus = .notDetermined
+        @unknown default:
             permissionStatus = .notDetermined
         }
         
@@ -386,8 +712,11 @@ class PermissionManager: ObservableObject {
     
     // 特定の許可を個別に要求
     func requestPermission(_ type: PermissionType) {
+        print("🚀 requestPermission呼び出し: \(type.displayName)")
+        
         Task {
             currentRequestingPermission = type
+            print("📌 currentRequestingPermissionを設定: \(type.displayName)")
             
             switch type {
             case .reminders:
@@ -404,13 +733,14 @@ class PermissionManager: ObservableObject {
                 await requestLocationPermission()
             }
             
+            print("🏁 \(type.displayName)のリクエスト処理完了、currentRequestingPermissionをnilに設定")
             currentRequestingPermission = nil
         }
     }
     
     // 全ての必要な許可が得られているかチェック
     var allRequiredPermissionsGranted: Bool {
-        let requiredPermissions: [PermissionType] = [.reminders, .notifications]
+        let requiredPermissions: [PermissionType] = [.reminders, .notifications, .bluetooth, .screenTime, .location]
         return requiredPermissions.allSatisfy { 
             permissionStatuses[$0] == .granted 
         }

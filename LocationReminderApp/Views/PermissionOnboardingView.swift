@@ -3,15 +3,16 @@ import SwiftUI
 struct PermissionOnboardingView: View {
     @ObservedObject var permissionManager = PermissionManager.shared
     @State private var currentStep = 0
+    @State private var isRequestingPermission = false
+    @State private var previousRequestingPermission: PermissionType? = nil
     @Environment(\.dismiss) private var dismiss
     
     private let permissions: [PermissionType] = [
         .reminders,
         .notifications,
-        .location,
         .bluetooth,
-        .nearbyInteraction,
-        .screenTime
+        .screenTime,
+        .location
     ]
     
     var body: some View {
@@ -52,7 +53,7 @@ struct PermissionOnboardingView: View {
                             // 許可ボタン
                             Button(action: requestCurrentPermission) {
                                 HStack {
-                                    if permissionManager.currentRequestingPermission == permissions[currentStep] {
+                                    if isRequestingPermission {
                                         ProgressView()
                                             .scaleEffect(0.8)
                                             .foregroundColor(.white)
@@ -69,7 +70,7 @@ struct PermissionOnboardingView: View {
                                 .foregroundColor(.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            .disabled(permissionManager.currentRequestingPermission == permissions[currentStep])
+                            .disabled(isRequestingPermission)
                             
                             // スキップボタン
                             Button("後で設定する") {
@@ -78,6 +79,7 @@ struct PermissionOnboardingView: View {
                                 }
                             }
                             .foregroundColor(.gray)
+                            .disabled(isRequestingPermission)
                         } else {
                             // 完了ボタン
                             Button("開始する") {
@@ -106,11 +108,26 @@ struct PermissionOnboardingView: View {
             }
         }
         .onChange(of: permissionManager.currentRequestingPermission) { newValue in
-            if newValue == nil && currentStep < permissions.count {
-                // 許可要求が完了したら次のステップへ
+            // 許可リクエストが開始された場合
+            if newValue != nil && previousRequestingPermission == nil {
+                previousRequestingPermission = newValue
+                print("🔄 onChange: リクエスト開始検知 - \(newValue?.displayName ?? "不明")")
+            }
+            // 許可リクエストが完了した場合（nil になった）
+            else if newValue == nil && previousRequestingPermission != nil {
+                let completedPermission = previousRequestingPermission?.displayName ?? "不明"
+                print("✅ onChange: リクエスト完了検知 - \(completedPermission)")
+                previousRequestingPermission = nil
+                
+                // 少し待機してから次のステップへ（UIの更新と状態確認）
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        nextStep()
+                    print("➡️ 次のステップへ移行")
+                    isRequestingPermission = false
+                    
+                    if currentStep < permissions.count {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            nextStep()
+                        }
                     }
                 }
             }
@@ -228,7 +245,18 @@ struct PermissionOnboardingView: View {
     }
     
     private func requestCurrentPermission() {
+        guard !isRequestingPermission else {
+            print("⚠️ 既にリクエスト中です")
+            return
+        }
+        
         let permission = permissions[currentStep]
+        print("🎯 オンボーディング: \(permission.displayName)の許可をリクエスト開始")
+        
+        isRequestingPermission = true
+        previousRequestingPermission = permission
+        
+        // 許可リクエストを実行
         permissionManager.requestPermission(permission)
     }
     

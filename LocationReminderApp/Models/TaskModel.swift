@@ -242,6 +242,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var hasTime: Bool = false // 時刻が設定されているかどうか
     var isCompleted: Bool = false
     var completedDate: Date?
+    var creationDate: Date? // タスクの作成日時
     var eventKitIdentifier: String? // EventKitのリマインダーIDを保存
     var priority: TaskPriority = .none // 優先度を追加
     var recurrenceType: RecurrenceType = .none // 繰り返し設定を追加
@@ -275,6 +276,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
         self.hasTime = reminder.dueDateComponents?.hour != nil
         self.isCompleted = reminder.isCompleted
         self.completedDate = reminder.completionDate
+        self.creationDate = reminder.creationDate
         self.eventKitIdentifier = reminder.calendarItemIdentifier
         
         // 優先度の設定
@@ -520,7 +522,8 @@ class EventKitTaskManager: ObservableObject {
             setupCalendar()
             loadReminders()
         case .notDetermined:
-            requestAccess()
+            // 自動リクエストはしない（オンボーディングで処理）
+            print("リマインダーアクセスが未確認です")
         case .denied, .restricted:
             print("リマインダーアクセスが拒否されています")
         case .fullAccess:

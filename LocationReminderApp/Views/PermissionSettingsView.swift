@@ -62,18 +62,13 @@ struct PermissionSettingsView: View {
                     }
                 }
                 
-                // 必須許可セクション
-                Section("必須の許可") {
-                    PermissionRowView(permission: .reminders, permissionManager: permissionManager, isRequired: true)
-                    PermissionRowView(permission: .notifications, permissionManager: permissionManager, isRequired: true)
-                }
-                
-                // オプション許可セクション
-                Section("オプションの許可") {
-                    PermissionRowView(permission: .location, permissionManager: permissionManager, isRequired: false)
-                    PermissionRowView(permission: .bluetooth, permissionManager: permissionManager, isRequired: false)
-                    PermissionRowView(permission: .nearbyInteraction, permissionManager: permissionManager, isRequired: false)
-                    PermissionRowView(permission: .screenTime, permissionManager: permissionManager, isRequired: false)
+                // アプリ許可
+                Section("アプリ許可") {
+                    PermissionRowView(permission: .reminders, permissionManager: permissionManager)
+                    PermissionRowView(permission: .notifications, permissionManager: permissionManager)
+                    PermissionRowView(permission: .bluetooth, permissionManager: permissionManager)
+                    PermissionRowView(permission: .screenTime, permissionManager: permissionManager)
+                    PermissionRowView(permission: .location, permissionManager: permissionManager)
                 }
                 
                 // 設定アクションセクション
@@ -134,11 +129,11 @@ struct PermissionSettingsView: View {
                                 .font(.caption)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("必須許可")
+                                Text("必要な許可")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 
-                                Text("リマインダーと通知の許可はアプリの基本機能に必要です")
+                                Text("全ての許可はアプリの機能に必要です")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -150,11 +145,11 @@ struct PermissionSettingsView: View {
                                 .font(.caption)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("オプション許可")
+                                Text("位置情報について")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 
-                                Text("位置情報、Bluetooth、UWB、スクリーンタイムは追加機能で使用されます")
+                                Text("位置ベースのリマインダーを利用するには「常に許可」が推奨されます")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -199,7 +194,6 @@ struct PermissionSettingsView: View {
 struct PermissionRowView: View {
     let permission: PermissionType
     @ObservedObject var permissionManager: PermissionManager
-    let isRequired: Bool
     
     var status: PermissionStatus {
         permissionManager.permissionStatuses[permission] ?? .notDetermined
@@ -212,21 +206,9 @@ struct PermissionRowView: View {
                 .frame(width: 24)
             
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(permission.displayName)
-                        .foregroundColor(.primary)
-                        .font(.subheadline)
-                    
-                    if isRequired {
-                        Text("必須")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.red.opacity(0.1))
-                            .foregroundColor(.red)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
-                }
+                Text(permission.displayName)
+                    .foregroundColor(.primary)
+                    .font(.subheadline)
                 
                 Text(permission.description)
                     .font(.caption)

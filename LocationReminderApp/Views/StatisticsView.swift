@@ -4,522 +4,515 @@ struct StatisticsView: View {
     @ObservedObject var taskManager: TaskManager
     @Environment(\.dismiss) private var dismiss
     
-    @State private var selectedPeriod: StatisticsPeriod = .overview
+    @State private var showShareSheet = false
+    @State private var csvText = ""
     
-    enum StatisticsPeriod: String, CaseIterable, Identifiable {
-        case overview = "概要"
-        case weekly = "週別"
-        case monthly = "月別"
-        
-        var id: String { rawValue }
+    // 今日から過去6日分（計7日分）
+    private var weekDates: [Date] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return (0..<7).compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: today)
+        }.reversed()
     }
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
-                    // 期間選択
-                    Picker("期間", selection: $selectedPeriod) {
-                        ForEach(StatisticsPeriod.allCases) { period in
-                            Text(period.rawValue).tag(period)
+                VStack(spacing: 12) {
+                    // CSVエクスポートボタン
+                    Button(action: {
+                        csvText = generateCSV()
+                        showShareSheet = true
+                    }) {
+                        HStack {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("CSVをエクスポート")
                         }
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
                     }
-                    .pickerStyle(SegmentedPickerStyle())
                     .padding(.horizontal)
+                    .padding(.top, 8)
                     
-                    switch selectedPeriod {
-                    case .overview:
-                        OverviewStatisticsView(taskManager: taskManager)
-                    case .weekly:
-                        WeeklyStatisticsView(taskManager: taskManager)
-                    case .monthly:
-                        MonthlyStatisticsView(taskManager: taskManager)
+                    // 1週間分の統計
+                    ForEach(weekDates, id: \.self) { date in
+                        DayStatisticsCard(
+                            date: date,
+                            taskManager: taskManager
+                        )
                     }
                 }
                 .padding(.bottom, 20)
             }
-            .navigationTitle("統計")
+            .navigationTitle("週間統計")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showShareSheet) {
+                ActivityViewController(activityItems: [csvText])
+            }
         }
+    }
+    
+    // CSV生成（1週間分）
+    private func generateCSV() -> String {
+        var csv = "日付,完了タスク数,アプリ制限時間(分),Bubble外回数\n"
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy/MM/dd"
+        
+        for date in weekDates {
+            let stats = getDailyStatistics(for: date)
+            let dateString = dateFormatter.string(from: date)
+            let restrictionMinutes = Int(stats.totalRestrictionTime / 60)
+            csv += "\(dateString),\(stats.completedTasks.count),\(restrictionMinutes),\(stats.bubbleOutsideCount)\n"
+        }
+        
+        csv += "\n完了したタスク\n"
+        csv += "日付,タスク名,登録時刻,完了時刻\n"
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        
+        for date in weekDates {
+            let stats = getDailyStatistics(for: date)
+            let dateString = dateFormatter.string(from: date)
+            
+            for task in stats.completedTasks {
+                let createdTimeString = task.creationDate != nil ? timeFormatter.string(from: task.creationDate!) : "不明"
+                let completedTimeString = timeFormatter.string(from: task.completedDate)
+                csv += "\(dateString),\(task.title),\(createdTimeString),\(completedTimeString)\n"
+            }
+        }
+        
+        return csv
+    }
+    
+    // 日別統計データを取得
+    private func getDailyStatistics(for date: Date) -> DailyStatistics {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        // 完了したタスクを取得
+        let completedTasks = taskManager.completedTasks.compactMap { task -> CompletedTaskInfo? in
+            guard let completedDate = task.completedDate,
+                  completedDate >= startOfDay && completedDate < endOfDay else {
+                return nil
+            }
+            return CompletedTaskInfo(
+                title: task.title,
+                creationDate: task.creationDate,
+                completedDate: completedDate
+            )
+        }.sorted { $0.completedDate < $1.completedDate }
+        
+        // アプリ制限時間を取得
+        let restrictionSessions = getRestrictionSessions()
+        let totalRestrictionTime = restrictionSessions
+            .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
+            .reduce(0.0) { $0 + $1.duration }
+        
+        // Bubble外回数を取得（アプリ制限中のみ）
+        let bubbleSessions = getBubbleSessions()
+        let bubbleOutsideCount = countBubbleOutsideDuringRestriction(
+            date: date,
+            bubbleSessions: bubbleSessions,
+            restrictionSessions: restrictionSessions
+        )
+        
+        return DailyStatistics(
+            date: date,
+            completedTasks: completedTasks,
+            totalRestrictionTime: totalRestrictionTime,
+            bubbleOutsideCount: bubbleOutsideCount
+        )
+    }
+    
+    // アプリ制限中のBubble外回数をカウント
+    private func countBubbleOutsideDuringRestriction(
+        date: Date,
+        bubbleSessions: [BubbleSession],
+        restrictionSessions: [RestrictionSession]
+    ) -> Int {
+        let calendar = Calendar.current
+        var count = 0
+        
+        for bubbleSession in bubbleSessions {
+            guard bubbleSession.isOutside,
+                  calendar.isDate(bubbleSession.startTime, inSameDayAs: date) else {
+                continue
+            }
+            
+            // このBubbleセッションが制限時間と重なっているかチェック
+            for restrictionSession in restrictionSessions {
+                if sessionsOverlap(
+                    bubbleStart: bubbleSession.startTime,
+                    bubbleEnd: bubbleSession.endTime,
+                    restrictionStart: restrictionSession.startTime,
+                    restrictionEnd: restrictionSession.endTime
+                ) {
+                    count += 1
+                    break
+                }
+            }
+        }
+        
+        return count
+    }
+    
+    // セッションの重なりをチェック
+    private func sessionsOverlap(
+        bubbleStart: Date,
+        bubbleEnd: Date,
+        restrictionStart: Date,
+        restrictionEnd: Date
+    ) -> Bool {
+        return bubbleStart < restrictionEnd && bubbleEnd > restrictionStart
+    }
+    
+    // UserDefaultsからセッションデータを取得
+    private func getRestrictionSessions() -> [RestrictionSession] {
+        guard let data = UserDefaults.standard.data(forKey: "screen_time_restriction_sessions"),
+              let sessions = try? JSONDecoder().decode([RestrictionSession].self, from: data) else {
+            return []
+        }
+        return sessions
+    }
+    
+    private func getBubbleSessions() -> [BubbleSession] {
+        guard let data = UserDefaults.standard.data(forKey: "uwb_bubble_sessions"),
+              let sessions = try? JSONDecoder().decode([BubbleSession].self, from: data) else {
+            return []
+        }
+        return sessions
     }
 }
 
-struct OverviewStatisticsView: View {
+// 日別統計カード（コンパクト版）
+struct DayStatisticsCard: View {
+    let date: Date
     @ObservedObject var taskManager: TaskManager
     
-    private var statistics: EventKitTaskManager.TaskStatistics {
-        taskManager.getDetailedStatistics()
+    @State private var isExpanded: Bool = false
+    
+    private var statistics: DailyStatistics {
+        getDailyStatistics(for: date)
     }
     
-    // 時間間隔をフォーマットする関数
-    private func formatTimeInterval(_ timeInterval: TimeInterval) -> String {
-        let hours = Int(timeInterval) / 3600
-        let minutes = (Int(timeInterval) % 3600) / 60
-        
-        if hours > 0 {
-            return "\(hours)h\(minutes)m"
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d(E)"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter
+    }
+    
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(date)
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // ヘッダー部分
+            Button(action: {
+                withAnimation(.spring(response: 0.3)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                VStack(spacing: 8) {
+                    HStack {
+                        // 日付
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(dateFormatter.string(from: date))
+                                .font(.headline)
+                                .foregroundColor(isToday ? .blue : .primary)
+                            if isToday {
+                                Text("今日")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // サマリー（バッジを横一列に）
+                    HStack(spacing: 8) {
+                        StatBadge(
+                            icon: "checkmark.circle.fill",
+                            value: "\(statistics.completedTasks.count)",
+                            color: .green
+                        )
+                        
+                        StatBadge(
+                            icon: "hourglass",
+                            value: formatMinutes(statistics.totalRestrictionTime),
+                            color: .blue
+                        )
+                        
+                        StatBadge(
+                            icon: "location.slash.fill",
+                            value: "\(statistics.bubbleOutsideCount)",
+                            color: .orange
+                        )
+                        
+                        Spacer()
+                    }
+                }
+                .padding()
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // 展開部分
+            if isExpanded {
+                Divider()
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    if statistics.completedTasks.isEmpty {
+                        Text("完了したタスクはありません")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(statistics.completedTasks) { task in
+                            CompactTaskRow(task: task)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+            }
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(.horizontal)
+    }
+    
+    private func formatMinutes(_ timeInterval: TimeInterval) -> String {
+        let minutes = Int(timeInterval / 60)
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            if remainingMinutes == 0 {
+                return "\(hours)h"
+            }
+            return "\(hours)h\(remainingMinutes)m"
         } else {
             return "\(minutes)m"
         }
     }
     
-    var body: some View {
-        VStack(spacing: 20) {
-            // メイン統計カード（大きめ表示）
-            VStack(spacing: 20) {
-                Text("今日の状況")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                HStack(spacing: 20) {
-                    // 平均在室時間（緑ベース）
-                    VStack(spacing: 8) {
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.8))
-                                Text("平均在室時間")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        Text(formatTimeInterval(statistics.averageInRoomTime))
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.green.opacity(0.8), Color.green.opacity(0.6)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .cornerRadius(16)
-                    
-                    // 不在時間（オレンジベース）
-                    VStack(spacing: 8) {
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "location.slash")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.8))
-                                Text("不在時間")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        Text(formatTimeInterval(statistics.totalOutsideTime))
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.orange.opacity(0.8), Color.orange.opacity(0.6)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .cornerRadius(16)
-                }
+    // 日別統計データを取得
+    private func getDailyStatistics(for date: Date) -> DailyStatistics {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        let completedTasks = taskManager.completedTasks.compactMap { task -> CompletedTaskInfo? in
+            guard let completedDate = task.completedDate,
+                  completedDate >= startOfDay && completedDate < endOfDay else {
+                return nil
             }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(12)
+            return CompletedTaskInfo(
+                title: task.title,
+                creationDate: task.creationDate,
+                completedDate: completedDate
+            )
+        }.sorted { $0.completedDate < $1.completedDate }
+        
+        let restrictionSessions = getRestrictionSessions()
+        let totalRestrictionTime = restrictionSessions
+            .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
+            .reduce(0.0) { $0 + $1.duration }
+        
+        let bubbleSessions = getBubbleSessions()
+        let bubbleOutsideCount = countBubbleOutsideDuringRestriction(
+            date: date,
+            bubbleSessions: bubbleSessions,
+            restrictionSessions: restrictionSessions
+        )
+        
+        return DailyStatistics(
+            date: date,
+            completedTasks: completedTasks,
+            totalRestrictionTime: totalRestrictionTime,
+            bubbleOutsideCount: bubbleOutsideCount
+        )
+    }
+    
+    private func countBubbleOutsideDuringRestriction(
+        date: Date,
+        bubbleSessions: [BubbleSession],
+        restrictionSessions: [RestrictionSession]
+    ) -> Int {
+        let calendar = Calendar.current
+        var count = 0
+        
+        for bubbleSession in bubbleSessions {
+            guard bubbleSession.isOutside,
+                  calendar.isDate(bubbleSession.startTime, inSameDayAs: date) else {
+                continue
+            }
             
-            // 全体統計カード
-            VStack(spacing: 16) {
-                Text("全体統計")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 16) {
-                    StatCard(
-                        title: "総タスク数",
-                        value: "\(statistics.totalTasks)",
-                        color: .blue,
-                        icon: "list.bullet"
-                    )
-                    
-                    StatCard(
-                        title: "未完了",
-                        value: "\(statistics.pendingTasks)",
-                        color: .orange,
-                        icon: "clock"
-                    )
+            for restrictionSession in restrictionSessions {
+                if sessionsOverlap(
+                    bubbleStart: bubbleSession.startTime,
+                    bubbleEnd: bubbleSession.endTime,
+                    restrictionStart: restrictionSession.startTime,
+                    restrictionEnd: restrictionSession.endTime
+                ) {
+                    count += 1
+                    break
                 }
             }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(12)
-            
-            // 休憩回数統計
-            VStack(spacing: 16) {
-                Text("作業統計")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                HStack(spacing: 16) {
-                    StatCard(
-                        title: "休憩回数",
-                        value: "\(statistics.breakCount)回",
-                        color: .blue,
-                        icon: "cup.and.saucer.fill"
-                    )
-                    
-                    StatCard(
-                        title: "今日完了",
-                        value: "\(statistics.todayCompleted)",
-                        color: .green,
-                        icon: "checkmark.circle.fill"
-                    )
-                }
-            }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(12)
-            
-            // 優先度別統計
-            VStack(spacing: 16) {
-                Text("優先度別タスク数")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                VStack(spacing: 12) {
-                    PriorityBar(
-                        title: "高優先度",
-                        count: statistics.highPriorityTasks,
-                        total: statistics.totalTasks,
-                        color: .red
-                    )
-                    
-                    PriorityBar(
-                        title: "中優先度",
-                        count: statistics.mediumPriorityTasks,
-                        total: statistics.totalTasks,
-                        color: .orange
-                    )
-                    
-                    PriorityBar(
-                        title: "低優先度",
-                        count: statistics.lowPriorityTasks,
-                        total: statistics.totalTasks,
-                        color: .blue
-                    )
-                }
-            }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(12)
-            
-            // 最近の活動
-            VStack(spacing: 16) {
-                Text("最近の活動")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 16) {
-                    StatCard(
-                        title: "今週完了",
-                        value: "\(statistics.weeklyCompleted)",
-                        color: .green,
-                        icon: "calendar.badge.checkmark"
-                    )
-                    
-                    StatCard(
-                        title: "今月完了",
-                        value: "\(statistics.monthlyCompleted)",
-                        color: .blue,
-                        icon: "calendar.badge.checkmark"
-                    )
-                }
-            }
-            .padding()
-            .background(Color(.systemGroupedBackground))
-            .cornerRadius(12)
         }
-        .padding(.horizontal)
+        
+        return count
+    }
+    
+    private func sessionsOverlap(
+        bubbleStart: Date,
+        bubbleEnd: Date,
+        restrictionStart: Date,
+        restrictionEnd: Date
+    ) -> Bool {
+        return bubbleStart < restrictionEnd && bubbleEnd > restrictionStart
+    }
+    
+    private func getRestrictionSessions() -> [RestrictionSession] {
+        guard let data = UserDefaults.standard.data(forKey: "screen_time_restriction_sessions"),
+              let sessions = try? JSONDecoder().decode([RestrictionSession].self, from: data) else {
+            return []
+        }
+        return sessions
+    }
+    
+    private func getBubbleSessions() -> [BubbleSession] {
+        guard let data = UserDefaults.standard.data(forKey: "uwb_bubble_sessions"),
+              let sessions = try? JSONDecoder().decode([BubbleSession].self, from: data) else {
+            return []
+        }
+        return sessions
     }
 }
 
-struct WeeklyStatisticsView: View {
-    @ObservedObject var taskManager: TaskManager
-    
-    private var weeklyStats: [EventKitTaskManager.WeeklyStats] {
-        taskManager.getWeeklyStatistics()
-    }
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("過去8週間の統計")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            
-            ForEach(weeklyStats.indices, id: \.self) { index in
-                let stat = weeklyStats[index]
-                WeeklyStatRow(
-                    weekStart: stat.weekStart,
-                    completed: stat.completed,
-                    created: stat.created,
-                    overdue: stat.overdue
-                )
-            }
-        }
-        .padding(.horizontal)
-    }
-}
-
-struct MonthlyStatisticsView: View {
-    @ObservedObject var taskManager: TaskManager
-    
-    private var monthlyStats: [EventKitTaskManager.MonthlyStats] {
-        taskManager.getMonthlyStatistics()
-    }
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("過去6ヶ月の統計")
-                .font(.title2)
-                .fontWeight(.bold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-            
-            ForEach(monthlyStats.indices, id: \.self) { index in
-                let stat = monthlyStats[index]
-                MonthlyStatRow(
-                    month: stat.month,
-                    completed: stat.completed,
-                    created: stat.created,
-                    overdue: stat.overdue
-                )
-            }
-        }
-        .padding(.horizontal)
-    }
-}
-
-struct StatCard: View {
-    let title: String
+// コンパクトな統計バッジ
+struct StatBadge: View {
+    let icon: String
     let value: String
     let color: Color
-    let icon: String
     
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.title2)
-                Spacer()
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .foregroundColor(color)
-                
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(color)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(color)
+                .fixedSize()
         }
-        .padding()
-        .background(Color(.systemBackground))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.12))
         .cornerRadius(8)
-        .shadow(radius: 2, x: 0, y: 1)
     }
 }
 
-struct PriorityBar: View {
-    let title: String
-    let count: Int
-    let total: Int
-    let color: Color
+// コンパクトなタスク行
+struct CompactTaskRow: View {
+    let task: CompletedTaskInfo
     
-    private var percentage: Double {
-        total > 0 ? Double(count) / Double(total) : 0
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
     }
     
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text("\(count)")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(color)
-            }
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundColor(.green)
             
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color(.systemGray5))
-                        .frame(height: 8)
-                        .cornerRadius(4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    if let creationDate = task.creationDate {
+                        Label(timeFormatter.string(from: creationDate), systemImage: "plus.circle")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                     
-                    Rectangle()
-                        .fill(color)
-                        .frame(width: geometry.size.width * percentage, height: 8)
-                        .cornerRadius(4)
+                    Label(timeFormatter.string(from: task.completedDate), systemImage: "checkmark.circle")
+                        .font(.caption2)
+                        .foregroundColor(.green)
                 }
             }
-            .frame(height: 8)
+            
+            Spacer()
         }
+        .padding(.vertical, 6)
     }
 }
 
-struct WeeklyStatRow: View {
-    let weekStart: Date
-    let completed: Int
-    let created: Int
-    let overdue: Int
-    
-    private var weekFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M/d"
-        return formatter
-    }
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("\(weekFormatter.string(from: weekStart))の週")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-            }
-            
-            HStack(spacing: 16) {
-                VStack {
-                    Text("\(completed)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.green)
-                    Text("完了")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack {
-                    Text("\(created)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    Text("作成")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                
-                VStack {
-                    Text("\(overdue)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.red)
-                    Text("期限超過")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding()
-        .background(Color(.systemGroupedBackground))
-        .cornerRadius(12)
-    }
+// 日別統計データ構造
+struct DailyStatistics {
+    let date: Date
+    let completedTasks: [CompletedTaskInfo]
+    let totalRestrictionTime: TimeInterval
+    let bubbleOutsideCount: Int
 }
 
-struct MonthlyStatRow: View {
-    let month: Date
-    let completed: Int
-    let created: Int
-    let overdue: Int
+struct CompletedTaskInfo: Identifiable {
+    let id = UUID()
+    let title: String
+    let creationDate: Date?
+    let completedDate: Date
+}
+
+// セッションデータ構造
+struct RestrictionSession: Codable {
+    let startTime: Date
+    let endTime: Date
+    let duration: TimeInterval
+    let taskId: String?
+}
+
+struct BubbleSession: Codable {
+    let startTime: Date
+    let endTime: Date
+    let duration: TimeInterval
+    let isOutside: Bool
+    let taskId: String?
+}
+
+// ShareSheetのためのUIViewControllerRepresentable
+struct ActivityViewController: UIViewControllerRepresentable {
+    let activityItems: [Any]
     
-    private var monthFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月"
-        return formatter
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        return controller
     }
     
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text(monthFormatter.string(from: month))
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-            }
-            
-            HStack(spacing: 16) {
-                VStack {
-                    Text("\(completed)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.green)
-                    Text("完了")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack {
-                    Text("\(created)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                    Text("作成")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                VStack {
-                    Text("\(overdue)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.red)
-                    Text("期限超過")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-                
-                Spacer()
-            }
-        }
-        .padding()
-        .background(Color(.systemGroupedBackground))
-        .cornerRadius(12)
-    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {
     StatisticsView(taskManager: TaskManager())
-} 
+}
