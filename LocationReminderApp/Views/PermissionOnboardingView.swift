@@ -39,6 +39,33 @@ struct PermissionOnboardingView: View {
                                 insertion: .move(edge: .trailing).combined(with: .opacity),
                                 removal: .move(edge: .leading).combined(with: .opacity)
                             ))
+                        
+                        // UWBセットアップ進捗表示（Bluetooth許可後）
+                        if permissionManager.isSettingUpUWB {
+                            VStack(spacing: 12) {
+                                Divider()
+                                    .padding(.vertical, 8)
+                                
+                                HStack(spacing: 12) {
+                                    ProgressView()
+                                        .scaleEffect(0.9)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("UWBデバイスをセットアップ中")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        
+                                        Text(permissionManager.uwbSetupProgress)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding()
+                                .background(Color.blue.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .padding(.horizontal)
+                        }
                     } else {
                         // 完了画面
                         completionView

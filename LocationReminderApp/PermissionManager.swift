@@ -61,7 +61,7 @@ enum PermissionType: String, CaseIterable {
         case .nearbyInteraction:
             return "wave.3.right"
         case .bluetooth:
-            return "bluetooth"
+            return "antenna.radiowaves.left.and.right"
         case .location:
             return "location.fill"
         }
@@ -114,6 +114,10 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var isRequestingPermissions = false
     @Published var currentRequestingPermission: PermissionType?
     @Published var showPermissionOnboarding = false
+    
+    // UWBセットアップの進捗状態
+    @Published var uwbSetupProgress: String = ""
+    @Published var isSettingUpUWB: Bool = false
     
     // 各マネージャーへの参照
     weak var taskManager: TaskManager?
@@ -370,12 +374,70 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         if let location = currentLocation {
             print("🏠 現在地取得成功: \(location.coordinate.latitude), \(location.coordinate.longitude)")
             
-            // UWBManagerに現在地を自宅として設定
-            uwbManager.setHomeLocation(location.coordinate)
+            // 住所を取得（逆ジオコーディング）
+            let address = await getAddressFromCoordinate(location.coordinate)
+            print("📍 住所取得: \(address)")
+            
+            // UWBManagerに現在地を自宅として設定（住所と半径も含む）
+            let radius = 50.0 // デフォルト半径50m
+            uwbManager.setHomeLocation(coordinate: location.coordinate, address: address, radius: radius)
             uwbManager.geofencingEnabled = true
+            
+            // GeofencingSettingsView用にUserDefaultsにも保存
+            UserDefaults.standard.set(location.coordinate.latitude, forKey: "homeLatitude")
+            UserDefaults.standard.set(location.coordinate.longitude, forKey: "homeLongitude")
+            UserDefaults.standard.set(address, forKey: "homeAddress")
+            
             print("✅ ジオフェンス設定完了")
+            print("   - 住所: \(address)")
+            print("   - 半径: \(radius)m")
         } else {
             print("⚠️ 現在地の取得に失敗しました")
+        }
+    }
+    
+    // 座標から住所を取得（逆ジオコーディング）
+    private func getAddressFromCoordinate(_ coordinate: CLLocationCoordinate2D) async -> String {
+        return await withCheckedContinuation { continuation in
+            let geocoder = CLGeocoder()
+            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            
+            geocoder.reverseGeocodeLocation(location) { placemarks, error in
+                if let error = error {
+                    print("❌ 逆ジオコーディングエラー: \(error.localizedDescription)")
+                    continuation.resume(returning: "住所取得失敗")
+                    return
+                }
+                
+                if let placemark = placemarks?.first {
+                    // 日本の住所形式で取得
+                    var addressComponents: [String] = []
+                    
+                    if let country = placemark.country {
+                        addressComponents.append(country)
+                    }
+                    if let postalCode = placemark.postalCode {
+                        addressComponents.append("〒\(postalCode)")
+                    }
+                    if let administrativeArea = placemark.administrativeArea {
+                        addressComponents.append(administrativeArea)
+                    }
+                    if let locality = placemark.locality {
+                        addressComponents.append(locality)
+                    }
+                    if let thoroughfare = placemark.thoroughfare {
+                        addressComponents.append(thoroughfare)
+                    }
+                    if let subThoroughfare = placemark.subThoroughfare {
+                        addressComponents.append(subThoroughfare)
+                    }
+                    
+                    let address = addressComponents.joined(separator: " ")
+                    continuation.resume(returning: address.isEmpty ? "住所不明" : address)
+                } else {
+                    continuation.resume(returning: "住所不明")
+                }
+            }
         }
     }
     
@@ -462,6 +524,9 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             return
         }
         
+        isSettingUpUWB = true
+        uwbSetupProgress = "UWBデバイスをスキャン中..."
+        
         // 既にスキャン中の場合はそのまま継続、そうでなければ開始
         if !uwbManager.isScanning {
             print("📡 UWBデバイスのスキャンを開始")
@@ -480,6 +545,8 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 let device = uwbManager.discoveredDevices[0]
                 print("✅ UWBデバイスを発見: \(device.name)")
                 
+                uwbSetupProgress = "デバイスに接続中..."
+                
                 // デバイスに自動接続
                 print("🔌 デバイスに自動接続中...")
                 await MainActor.run {
@@ -491,8 +558,22 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 for j in 0..<120 {
                     try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
                     
+                    // ステータスに応じて進捗メッセージを更新
                     if j % 4 == 0 { // 2秒ごとにステータス確認
                         print("📊 デバイスステータス: \(device.status.rawValue)")
+                        
+                        await MainActor.run {
+                            switch device.status {
+                            case .discovered:
+                                uwbSetupProgress = "デバイスに接続中..."
+                            case .connected:
+                                uwbSetupProgress = "ペアリング中..."
+                            case .paired:
+                                uwbSetupProgress = "NIセッション開始中..."
+                            case .ranging:
+                                uwbSetupProgress = "セットアップ完了！"
+                            }
+                        }
                     }
                     
                     // ranging状態（NIセッション開始済み）になったら完了
@@ -500,15 +581,26 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                         print("✅ UWBデバイスのセットアップ完了！")
                         print("   - 距離測定中: \(device.distance != nil ? String(format: "%.2fm", device.distance!) : "測定中...")")
                         
+                        uwbSetupProgress = "セットアップ完了！"
+                        
                         // スキャンを停止
                         await MainActor.run {
                             uwbManager.stopScanning()
                         }
+                        
+                        // 少し待ってから進捗表示を終了
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        isSettingUpUWB = false
+                        uwbSetupProgress = ""
                         return
                     }
                 }
                 
                 print("⚠️ UWBセットアップがタイムアウトしました")
+                uwbSetupProgress = "タイムアウトしました"
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                isSettingUpUWB = false
+                uwbSetupProgress = ""
                 return
             }
             
@@ -520,6 +612,11 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         print("⚠️ UWBデバイスが見つかりませんでした（30秒間）")
         print("💡 手動でUWB設定画面からデバイスをスキャンしてください")
+        
+        uwbSetupProgress = "デバイスが見つかりませんでした"
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        isSettingUpUWB = false
+        uwbSetupProgress = ""
     }
     
     private func requestNearbyInteractionPermission() async {

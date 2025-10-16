@@ -54,6 +54,10 @@ struct GeofencingSettingsView: View {
             loadSavedData()
             locationManager.requestPermission()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            // UserDefaultsが変更されたら自動的に再読み込み
+            loadSavedData()
+        }
         .onReceive(locationManager.$authorizationStatus) { status in
             handleAuthorizationChange(status)
         }
@@ -294,10 +298,14 @@ struct GeofencingSettingsView: View {
     }
     
     private func loadSavedData() {
+        print("📂 GeofencingSettingsView: 保存データを読み込み中...")
+        
         // 保存されたホーム位置を読み込み
         if let latitudeData = UserDefaults.standard.object(forKey: "homeLatitude") as? Double,
            let longitudeData = UserDefaults.standard.object(forKey: "homeLongitude") as? Double {
             homeLocation = CLLocationCoordinate2D(latitude: latitudeData, longitude: longitudeData)
+            
+            print("✅ 自宅位置読み込み: \(latitudeData), \(longitudeData)")
             
             // 地図の中心のみ更新（ズームレベルは保持）
             withAnimation(.easeInOut(duration: 0.5)) {
@@ -306,11 +314,16 @@ struct GeofencingSettingsView: View {
                     span: region.span // 現在のspanを保持
                 )
             }
+        } else {
+            print("⚠️ 自宅位置が保存されていません")
         }
         
         // 保存された住所を読み込み
         if let savedAddress = UserDefaults.standard.string(forKey: "homeAddress") {
             homeAddress = savedAddress
+            print("✅ 自宅住所読み込み: \(savedAddress)")
+        } else {
+            print("⚠️ 自宅住所が保存されていません")
         }
         
         // デバッグ通知設定を読み込み
