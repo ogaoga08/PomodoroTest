@@ -99,7 +99,7 @@ struct GeofencingSettingsView: View {
                     center: homeLocation,
                     span: MKCoordinateSpan(latitudeDelta: 0.002, longitudeDelta: 0.002)
                 )), annotationItems: [HomeAnnotation(coordinate: homeLocation)]) { annotation in
-                    MapPin(coordinate: annotation.coordinate, tint: .blue)
+                    MapMarker(coordinate: annotation.coordinate, tint: .blue)
                 }
                 .frame(height: 200)
                 .cornerRadius(12)
@@ -462,7 +462,7 @@ struct HomeLocationPickerView: View {
     private var mapSection: some View {
         ZStack {
             Map(coordinateRegion: $mapRegion, annotationItems: selectedLocation != nil ? [LocationAnnotation(coordinate: selectedLocation!)] : []) { annotation in
-                MapPin(coordinate: annotation.coordinate, tint: .blue)
+                MapMarker(coordinate: annotation.coordinate, tint: .blue)
             }
             .frame(height: 350)
             .cornerRadius(12)

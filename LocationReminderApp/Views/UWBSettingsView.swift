@@ -383,7 +383,7 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var niSessions: [Int: NISession] = [:]
     private var accessoryConfigurations: [Int: NINearbyAccessoryConfiguration] = [:]
     private var permissionTestSession: NISession?
-    private let logger = os.Logger(subsystem: "com.pomodororeminder.uwb", category: "UWBManager")
+    private let logger = os.Logger(subsystem: "com.locationreminder.app.uwb", category: "UWBManager")
     private let savedDevicesKey = "saved_uwb_devices"
     private let notificationManager = NotificationManager.shared
     
@@ -2059,14 +2059,14 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         let hasNISession = niSessions[deviceID] != nil
         let shouldHaveNISession = device.status == .ranging || device.status == .paired
         
-        // NISessionが必要なのに存在しない場合、または距離データが長期間更新されていない場合
-        let shouldRepair = (!hasNISession && shouldHaveNISession) ||
-                          (device.status == .ranging && device.distance == nil && 
-                           Date().timeIntervalSince(device.lastUpdate) > 60.0)  // 60秒以上距離更新なし
+        // NISessionが必要なのに存在しない場合のみ修復対象とする
+        // ステータスがrangingの場合、NISessionが存在すればデータ受信を待つべき
+        let shouldRepair = !hasNISession && shouldHaveNISession
         
         if shouldRepair {
             // バックグラウンド再ペアリング対象に設定（1台限定）
             repairingDeviceID = deviceID
+            logger.info("   ⚠️ NISession不足検出: \(device.name) (ステータス: \(device.status.rawValue))")
         }
     }
     
@@ -2908,7 +2908,7 @@ extension UWBManager: NISessionDelegate {
         // 距離データの有無を確認
         guard let distance = accessory.distance else {
             logger.info("📡 NISession更新: オブジェクト検出されたが距離データなし")
-            logger.info("   - discoveryToken: \(accessory.discoveryToken != nil ? "あり" : "なし")")
+            logger.info("   - discoveryToken: あり")
             logger.info("   - direction: \(accessory.direction != nil ? "あり" : "なし")")
             return
         }

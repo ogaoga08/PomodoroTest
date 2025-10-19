@@ -230,7 +230,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // 現在の状態を取得
         let initialStatus = permissionStatuses[.reminders]
-        print("📝 初期状態: \(initialStatus)")
+        print("📝 初期状態: \(initialStatus?.displayText ?? "不明")")
         
         // 許可をリクエスト
         taskManager.requestReminderAccess()
@@ -245,19 +245,19 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             let currentStatus = permissionStatuses[.reminders]
             if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📝 リマインダー状態チェック (\(i/2)秒): \(currentStatus)")
+                print("📝 リマインダー状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
             }
             
             // 状態が変化したら完了
             if currentStatus != initialStatus && currentStatus != .notDetermined {
-                print("✅ リマインダー許可完了: \(currentStatus)")
+                print("✅ リマインダー許可完了: \(currentStatus?.displayText ?? "不明")")
                 break
             }
         }
         
         // 最終状態を確認
         await checkRemindersPermission()
-        print("📝 リマインダー最終状態: \(permissionStatuses[.reminders] ?? .notDetermined)")
+        print("📝 リマインダー最終状態: \(permissionStatuses[.reminders]?.displayText ?? "不明")")
     }
     
     private func requestNotificationsPermission() async {
@@ -270,7 +270,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // 現在の状態を取得
         let initialStatus = permissionStatuses[.notifications]
-        print("🔔 初期状態: \(initialStatus)")
+        print("🔔 初期状態: \(initialStatus?.displayText ?? "不明")")
         
         // 許可をリクエスト
         notificationManager.requestAuthorization()
@@ -285,19 +285,19 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             let currentStatus = permissionStatuses[.notifications]
             if i % 4 == 0 { // 2秒ごとにログ出力
-                print("🔔 通知状態チェック (\(i/2)秒): \(currentStatus)")
+                print("🔔 通知状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
             }
             
             // 状態が変化したら完了
             if currentStatus != initialStatus && currentStatus != .notDetermined {
-                print("✅ 通知許可完了: \(currentStatus)")
+                print("✅ 通知許可完了: \(currentStatus?.displayText ?? "不明")")
                 break
             }
         }
         
         // 最終状態を確認
         await checkNotificationsPermission()
-        print("🔔 通知最終状態: \(permissionStatuses[.notifications] ?? .notDetermined)")
+        print("🔔 通知最終状態: \(permissionStatuses[.notifications]?.displayText ?? "不明")")
     }
     
     private func requestLocationPermission() async {
@@ -305,7 +305,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // 現在の状態を取得
         let initialStatus = permissionStatuses[.location]
-        print("📍 初期状態: \(initialStatus)")
+        print("📍 初期状態: \(initialStatus?.displayText ?? "不明")")
         
         // まず「使用中の許可」を要求
         locationManager.requestWhenInUseAuthorization()
@@ -320,12 +320,12 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             let currentStatus = permissionStatuses[.location]
             if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📍 位置情報状態チェック (\(i/2)秒): \(currentStatus)")
+                print("📍 位置情報状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
             }
             
             // 状態が変化したら次へ
             if currentStatus != initialStatus && currentStatus != .notDetermined {
-                print("✅ 使用中の許可完了: \(currentStatus)")
+                print("✅ 使用中の許可完了: \(currentStatus?.displayText ?? "不明")")
                 break
             }
         }
@@ -344,14 +344,14 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             let currentStatus = permissionStatuses[.location]
             if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📍 常に許可状態チェック (\(i/2)秒): \(currentStatus)")
+                print("📍 常に許可状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
             }
         }
         
         // 最終状態を確認
         await checkLocationPermission()
         let finalStatus = permissionStatuses[.location]
-        print("📍 位置情報最終状態: \(finalStatus)")
+        print("📍 位置情報最終状態: \(finalStatus?.displayText ?? "不明")")
         
         // 位置情報許可が得られた場合、現在地をジオフェンス住所として自動登録
         if finalStatus == .granted {
@@ -473,7 +473,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // 現在の状態を取得
         let initialStatus = permissionStatuses[.bluetooth]
-        print("📡 初期状態: \(initialStatus)")
+        print("📡 初期状態: \(initialStatus?.displayText ?? "不明")")
         
         // Bluetooth delegateを有効化（まだ有効化されていない場合）
         uwbManager.enableBluetoothDelegate()
@@ -494,12 +494,12 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             let currentStatus = permissionStatuses[.bluetooth]
             if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📡 Bluetooth状態チェック (\(i/2)秒): \(currentStatus)")
+                print("📡 Bluetooth状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
             }
             
             // 状態が変化したら完了
             if currentStatus != initialStatus && currentStatus != .notDetermined {
-                print("✅ Bluetooth許可完了: \(currentStatus)")
+                print("✅ Bluetooth許可完了: \(currentStatus?.displayText ?? "不明")")
                 break
             }
         }
@@ -507,7 +507,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // 最終状態を確認
         await checkBluetoothPermission()
         let finalStatus = permissionStatuses[.bluetooth]
-        print("📡 Bluetooth最終状態: \(finalStatus)")
+        print("📡 Bluetooth最終状態: \(finalStatus?.displayText ?? "不明")")
         
         // Bluetooth許可が得られた場合、UWBデバイスの自動セットアップを開始
         if finalStatus == .granted {
