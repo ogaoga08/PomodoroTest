@@ -456,6 +456,7 @@ class EventKitTaskManager: ObservableObject {
     // UserDefaultsのキー
     private let selectedListIdentifierKey = "SelectedReminderListIdentifier"
     private let hasSelectedListKey = "HasSelectedReminderList"
+    private let hasCreatedInitialTasksKey = "HasCreatedInitialTasks"
     
     init() {
         checkAuthorizationStatus()
@@ -1350,6 +1351,65 @@ class EventKitTaskManager: ObservableObject {
         return stats.reversed() // 古い順にソート
     }
     
+    // MARK: - 初期タスク管理
+    
+    /// 初期タスクが作成済みかどうかを確認
+    func hasCreatedInitialTasks() -> Bool {
+        return UserDefaults.standard.bool(forKey: hasCreatedInitialTasksKey)
+    }
+    
+    /// 初期タスク作成済みフラグを設定
+    func setInitialTasksCreated() {
+        UserDefaults.standard.set(true, forKey: hasCreatedInitialTasksKey)
+    }
+    
+    /// 「実験用リスト」を作成し、選択する
+    func createExperimentalReminderList() throws -> EKCalendar {
+        guard isAuthorized() else {
+            throw NSError(domain: "TaskManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "リマインダーアクセスの認証が必要です"])
+        }
+        
+        // 新しいリマインダーリストを作成
+        let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
+        newCalendar.title = "実験用リスト"
+        newCalendar.source = eventStore.defaultCalendarForNewReminders()?.source
+        
+        // EventStoreに保存
+        try eventStore.saveCalendar(newCalendar, commit: true)
+        
+        // このリストを選択
+        setSelectedReminderList(newCalendar)
+        
+        print("「実験用リスト」を作成しました")
+        return newCalendar
+    }
+    
+    /// 初期タスクを一括登録
+    /// - Parameter startDate: 1日目の日付
+    func createInitialTasks(from startDate: Date) {
+        guard isAuthorized(),
+              let calendar = reminderCalendar else {
+            print("初期タスクの作成に失敗: 認証またはリストが未設定")
+            return
+        }
+        
+        // 初期タスクを生成
+        let initialTasksData = InitialTaskGenerator.generateInitialTasks(from: startDate)
+        
+        print("初期タスクを\(initialTasksData.count)件作成します...")
+        
+        // 各タスクをEventKitに登録
+        for taskData in initialTasksData {
+            let task = taskData.toTaskItem()
+            addTask(task)
+        }
+        
+        // 初期タスク作成済みフラグを立てる
+        setInitialTasksCreated()
+        
+        print("初期タスクの作成が完了しました")
+    }
+    
     /// 過去数ヶ月の月別統計を取得
     func getMonthlyStatistics(monthsBack: Int = 6) -> [MonthlyStats] {
         let calendar = Calendar.current
@@ -1384,6 +1444,102 @@ class EventKitTaskManager: ObservableObject {
         }
         
         return stats.reversed() // 古い順にソート
+    }
+}
+
+// MARK: - 初期タスク生成
+
+/// 初期タスクの種類
+enum InitialTaskType: String, CaseIterable {
+    case vocabulary = "英単語課題"
+    case generalKnowledge = "一般教養課題"
+    case videoWatching = "動画視聴課題"
+    
+    var displayName: String {
+        return rawValue
+    }
+}
+
+/// 初期タスクのデータ
+struct InitialTaskData {
+    let type: InitialTaskType
+    let dayNumber: Int
+    let title: String
+    let memo: String
+    let dueDate: Date
+    
+    /// 初期タスクからTaskItemを生成
+    func toTaskItem() -> TaskItem {
+        return TaskItem(
+            title: title,
+            memo: memo,
+            dueDate: dueDate,
+            hasTime: true,
+            priority: .none,
+            recurrenceType: .none
+        )
+    }
+}
+
+/// 初期タスク生成ユーティリティ
+struct InitialTaskGenerator {
+    /// 開始日から初期タスクを生成
+    /// - Parameter startDate: 1日目の日付
+    /// - Returns: 生成された初期タスクの配列
+    static func generateInitialTasks(from startDate: Date) -> [InitialTaskData] {
+        var tasks: [InitialTaskData] = []
+        let calendar = Calendar.current
+        
+        // ダミーのGoogle FormのURL
+        let dummyURL = "https://forms.google.com/dummy"
+        
+        // 1日目から14日目まで繰り返し
+        for day in 1...14 {
+            // その日の17:00の日付を作成
+            guard let targetDate = calendar.date(byAdding: .day, value: day - 1, to: startDate) else {
+                continue
+            }
+            
+            var components = calendar.dateComponents([.year, .month, .day], from: targetDate)
+            components.hour = 17
+            components.minute = 0
+            components.second = 0
+            
+            guard let taskDate = calendar.date(from: components) else {
+                continue
+            }
+            
+            // 英単語課題
+            tasks.append(InitialTaskData(
+                type: .vocabulary,
+                dayNumber: day,
+                title: "英単語課題\(day)日目",
+                memo: dummyURL,
+                dueDate: taskDate
+            ))
+            
+            // 一般教養課題
+            tasks.append(InitialTaskData(
+                type: .generalKnowledge,
+                dayNumber: day,
+                title: "一般教養課題\(day)日目",
+                memo: dummyURL,
+                dueDate: taskDate
+            ))
+            
+            // 動画視聴課題（4日目と11日目のみ）
+            if day == 4 || day == 11 {
+                tasks.append(InitialTaskData(
+                    type: .videoWatching,
+                    dayNumber: day,
+                    title: "動画視聴課題",
+                    memo: dummyURL,
+                    dueDate: taskDate
+                ))
+            }
+        }
+        
+        return tasks
     }
 }
 

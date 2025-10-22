@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var showingReminderListSelection = false
     @State private var showingMenu = false
     @State private var showingPermissionOnboarding = false
+    @State private var showingInitialTaskSetup = false
     
     // 初回起動判定用
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -366,7 +367,17 @@ struct ContentView: View {
                     
                     // オンボーディング完了後に許可状態をチェック
                     permissionManager.checkAllPermissionStatuses()
+                    
+                    // 初期タスクが未作成の場合、初期タスクセットアップ画面を表示
+                    if !taskManager.hasCreatedInitialTasks() {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            showingInitialTaskSetup = true
+                        }
+                    }
                 }
+        }
+        .sheet(isPresented: $showingInitialTaskSetup) {
+            InitialTaskSetupView(taskManager: taskManager)
         }
         .onAppear {
             // 各マネージャー間の参照を設定
@@ -397,6 +408,13 @@ struct ContentView: View {
                 
                 // 許可状態をチェック
                 permissionManager.checkAllPermissionStatuses()
+                
+                // 初期タスクが未作成の場合、初期タスクセットアップ画面を表示
+                if !taskManager.hasCreatedInitialTasks() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        showingInitialTaskSetup = true
+                    }
+                }
             }
         }
         .onReceive(uwbManager.$isInSecureBubble) { isInBubble in
