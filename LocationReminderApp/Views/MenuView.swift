@@ -62,16 +62,6 @@ struct MenuView: View {
                         }
                     }
                     
-                    NavigationLink(destination: GeofencingSettingsView()) {
-                        HStack {
-                            Image(systemName: "location.circle")
-                                .foregroundColor(.blue)
-                                .frame(width: 24)
-                            Text("ジオフェンシング設定")
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    
                     NavigationLink(destination: PermissionSettingsView()) {
                         HStack {
                             Image(systemName: "checkmark.shield")

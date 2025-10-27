@@ -1388,7 +1388,7 @@ class EventKitTaskManager: ObservableObject {
     /// - Parameter startDate: 1日目の日付
     func createInitialTasks(from startDate: Date) {
         guard isAuthorized(),
-              let calendar = reminderCalendar else {
+              reminderCalendar != nil else {
             print("初期タスクの作成に失敗: 認証またはリストが未設定")
             return
         }
@@ -1408,6 +1408,100 @@ class EventKitTaskManager: ObservableObject {
         setInitialTasksCreated()
         
         print("初期タスクの作成が完了しました")
+    }
+    
+    // MARK: - 自宅位置情報タスク管理（UWB自動ペアリング用）
+    
+    /// 自宅位置情報タスクを作成または更新する（UWB自動ペアリング用）
+    /// - Parameters:
+    ///   - coordinate: 自宅の座標
+    ///   - address: 自宅の住所
+    ///   - radius: ジオフェンスの半径（メートル）
+    func createOrUpdateHomeLocationTask(
+        coordinate: CLLocationCoordinate2D,
+        address: String,
+        radius: Double = 50.0
+    ) {
+        guard isAuthorized(),
+              reminderCalendar != nil else {
+            print("❌ 自宅タスクの作成に失敗: 認証またはリストが未設定")
+            return
+        }
+        
+        print("🏠 自宅位置情報タスクを作成/更新します")
+        print("   - 住所: \(address)")
+        print("   - 座標: (\(coordinate.latitude), \(coordinate.longitude))")
+        print("   - 半径: \(radius)m")
+        
+        // 既存の自宅タスクを検索
+        let existingHomeTask = tasks.first { task in
+            task.title.contains("自宅（UWB自動接続用）") ||
+            task.memo.contains("[uwb_auto_trigger]")
+        }
+        
+        if let existingTask = existingHomeTask {
+            // 既存のタスクを更新
+            print("✏️ 既存の自宅タスクを更新: \(existingTask.title)")
+            
+            var updatedTask = existingTask
+            updatedTask.locationReminder = LocationReminder(
+                title: address,
+                address: address,
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                radius: radius,
+                triggerType: .arriving // 到着時にトリガー
+            )
+            updatedTask.memo = "[uwb_auto_trigger] 自宅に到着するとUWBデバイスとの自動接続が開始されます"
+            
+            updateTask(updatedTask)
+            print("✅ 自宅タスク更新完了")
+            
+        } else {
+            // 新規タスクを作成
+            print("📝 新規自宅タスクを作成")
+            
+            let homeTask = TaskItem(
+                title: "自宅（UWB自動接続用）",
+                memo: "[uwb_auto_trigger] 自宅に到着するとUWBデバイスとの自動接続が開始されます",
+                dueDate: Date().addingTimeInterval(86400 * 365), // 1年後（期限を遠くに設定）
+                hasTime: false,
+                priority: .none,
+                recurrenceType: .none,
+                locationReminder: LocationReminder(
+                    title: address,
+                    address: address,
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude,
+                    radius: radius,
+                    triggerType: .arriving // 到着時にトリガー
+                ),
+                alarms: [], // 位置アラームのみ使用
+                tags: ["uwb", "自宅"],
+                parentId: nil,
+                isSubtask: false,
+                subtaskOrder: 0
+            )
+            
+            addTask(homeTask)
+            print("✅ 自宅タスク作成完了")
+        }
+    }
+    
+    /// 自宅位置情報タスクを削除する
+    func deleteHomeLocationTask() {
+        let homeTask = tasks.first { task in
+            task.title.contains("自宅（UWB自動接続用）") ||
+            task.memo.contains("[uwb_auto_trigger]")
+        }
+        
+        if let task = homeTask {
+            print("🗑️ 自宅タスクを削除: \(task.title)")
+            deleteTask(task)
+            print("✅ 自宅タスク削除完了")
+        } else {
+            print("ℹ️ 削除する自宅タスクが見つかりませんでした")
+        }
     }
     
     /// 過去数ヶ月の月別統計を取得
@@ -1490,9 +1584,6 @@ struct InitialTaskGenerator {
         var tasks: [InitialTaskData] = []
         let calendar = Calendar.current
         
-        // ダミーのGoogle FormのURL
-        let dummyURL = "https://forms.google.com/dummy"
-        
         // 1日目から14日目まで繰り返し
         for day in 1...14 {
             // その日の17:00の日付を作成
@@ -1509,21 +1600,21 @@ struct InitialTaskGenerator {
                 continue
             }
             
-            // 英単語課題
+            // 英単語課題（日ごとに異なるURL）
             tasks.append(InitialTaskData(
                 type: .vocabulary,
                 dayNumber: day,
                 title: "英単語課題\(day)日目",
-                memo: dummyURL,
+                memo: getVocabularyURL(for: day),
                 dueDate: taskDate
             ))
             
-            // 一般教養課題
+            // 一般教養課題（日ごとに異なるURL）
             tasks.append(InitialTaskData(
                 type: .generalKnowledge,
                 dayNumber: day,
                 title: "一般教養課題\(day)日目",
-                memo: dummyURL,
+                memo: getGeneralKnowledgeURL(for: day),
                 dueDate: taskDate
             ))
             
@@ -1533,13 +1624,57 @@ struct InitialTaskGenerator {
                     type: .videoWatching,
                     dayNumber: day,
                     title: "動画視聴課題",
-                    memo: dummyURL,
+                    memo: getVideoWatchingURL(for: day),
                     dueDate: taskDate
                 ))
             }
         }
         
         return tasks
+    }
+    
+    // MARK: - URL生成メソッド（ここを編集して実際のURLを設定してください）
+    
+    /// 英単語課題のURLを取得
+    /// - Parameter day: 日数（1〜14）
+    /// - Returns: Google FormのURL
+    private static func getVocabularyURL(for day: Int) -> String {
+        // ここに実際のGoogle FormのURLを日ごとに設定してください
+        // 例: 
+        // switch day {
+        // case 1: return "https://forms.google.com/d/e/xxxxx1/viewform"
+        // case 2: return "https://forms.google.com/d/e/xxxxx2/viewform"
+        // ...
+        // default: return "https://forms.google.com/dummy"
+        // }
+        
+        return "https://forms.google.com/vocabulary-day\(day)"
+    }
+    
+    /// 一般教養課題のURLを取得
+    /// - Parameter day: 日数（1〜14）
+    /// - Returns: Google FormのURL
+    private static func getGeneralKnowledgeURL(for day: Int) -> String {
+        // ここに実際のGoogle FormのURLを日ごとに設定してください
+        
+        return "https://forms.google.com/knowledge-day\(day)"
+    }
+    
+    /// 動画視聴課題のURLを取得
+    /// - Parameter day: 日数（4または11）
+    /// - Returns: Google FormのURL
+    private static func getVideoWatchingURL(for day: Int) -> String {
+        // ここに実際のGoogle FormのURLを日ごとに設定してください
+        // day 4と11で異なるURLを返すことができます
+        
+        switch day {
+        case 4:
+            return "https://forms.google.com/video-day4"
+        case 11:
+            return "https://forms.google.com/video-day11"
+        default:
+            return "https://forms.google.com/video-day\(day)"
+        }
     }
 }
 

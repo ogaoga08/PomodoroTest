@@ -13,8 +13,7 @@ struct PermissionOnboardingView: View {
         .reminders,
         .notifications,
         .bluetooth,
-        .screenTime,
-        .location
+        .screenTime
     ]
     
     var body: some View {

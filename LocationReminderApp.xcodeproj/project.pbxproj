@@ -21,7 +21,6 @@
 		543113862E1AC78E000EFA3A /* ReminderListSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */; };
 		543113882E1AD919000EFA3A /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543113872E1AD919000EFA3A /* StatisticsView.swift */; };
 		544F891F2E98F93D002686D4 /* PermissionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544F891E2E98F93D002686D4 /* PermissionSettingsView.swift */; };
-		544F89202E98F93D002686D4 /* GeofencingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544F891D2E98F93D002686D4 /* GeofencingSettingsView.swift */; };
 		5468F6632E85879600C28ECB /* NearbyInteraction.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5468F6622E85879600C28ECB /* NearbyInteraction.framework */; };
 		549040D62E82B93B0045A3A1 /* PermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549040D52E82B93B0045A3A1 /* PermissionOnboardingView.swift */; };
 		549040D82E82B9CE0045A3A1 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549040D72E82B9CE0045A3A1 /* PermissionManager.swift */; };
@@ -71,7 +70,6 @@
 		543113832E119F7A000EFA3A /* ScreenTimeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeSettingsView.swift; sourceTree = "<group>"; };
 		543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderListSelectionView.swift; sourceTree = "<group>"; usesTabs = 0; };
 		543113872E1AD919000EFA3A /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
-		544F891D2E98F93D002686D4 /* GeofencingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeofencingSettingsView.swift; sourceTree = "<group>"; };
 		544F891E2E98F93D002686D4 /* PermissionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionSettingsView.swift; sourceTree = "<group>"; };
 		5468F6622E85879600C28ECB /* NearbyInteraction.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NearbyInteraction.framework; path = System/Library/Frameworks/NearbyInteraction.framework; sourceTree = SDKROOT; };
 		546E25FD2E1CDA3700E2CD04 /* LocationReminderApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocationReminderApp.entitlements; sourceTree = "<group>"; };
@@ -173,7 +171,6 @@
 			isa = PBXGroup;
 			children = (
 				54B55F822EA88F76006DE215 /* InitialTaskSetupView.swift */,
-				544F891D2E98F93D002686D4 /* GeofencingSettingsView.swift */,
 				544F891E2E98F93D002686D4 /* PermissionSettingsView.swift */,
 				543113872E1AD919000EFA3A /* StatisticsView.swift */,
 				543113852E1AC78E000EFA3A /* ReminderListSelectionView.swift */,
@@ -310,7 +307,6 @@
 				543113842E119F7A000EFA3A /* ScreenTimeSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A2C /* AddTaskView.swift in Sources */,
 				544F891F2E98F93D002686D4 /* PermissionSettingsView.swift in Sources */,
-				544F89202E98F93D002686D4 /* GeofencingSettingsView.swift in Sources */,
 				1A1A1A1A1A1A1A2E /* TaskDetailView.swift in Sources */,
 				543113862E1AC78E000EFA3A /* ReminderListSelectionView.swift in Sources */,
 				1A1A1A1A1A1A1A30 /* MenuView.swift in Sources */,

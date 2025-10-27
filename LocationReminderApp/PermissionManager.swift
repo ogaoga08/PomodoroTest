@@ -5,7 +5,6 @@ import EventKit
 import FamilyControls
 import NearbyInteraction
 import CoreBluetooth
-import CoreLocation
 
 // 許可の種類を定義
 enum PermissionType: String, CaseIterable {
@@ -14,7 +13,6 @@ enum PermissionType: String, CaseIterable {
     case screenTime = "screenTime"
     case nearbyInteraction = "nearbyInteraction"
     case bluetooth = "bluetooth"
-    case location = "location"
     
     var displayName: String {
         switch self {
@@ -28,8 +26,6 @@ enum PermissionType: String, CaseIterable {
             return "Nearby Interaction"
         case .bluetooth:
             return "Bluetooth"
-        case .location:
-            return "位置情報"
         }
     }
     
@@ -45,8 +41,6 @@ enum PermissionType: String, CaseIterable {
             return "UWBデバイスとの精密な距離測定のために必要です"
         case .bluetooth:
             return "UWBデバイスとの通信のために必要です"
-        case .location:
-            return "位置ベースのリマインダー機能のために必要です"
         }
     }
     
@@ -62,8 +56,6 @@ enum PermissionType: String, CaseIterable {
             return "wave.3.right"
         case .bluetooth:
             return "antenna.radiowaves.left.and.right"
-        case .location:
-            return "location.fill"
         }
     }
 }
@@ -107,7 +99,7 @@ enum PermissionStatus {
 
 // 許可管理クラス
 @MainActor
-class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+class PermissionManager: NSObject, ObservableObject {
     static let shared = PermissionManager()
     
     @Published var permissionStatuses: [PermissionType: PermissionStatus] = [:]
@@ -125,34 +117,9 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     weak var uwbManager: UWBManager?
     weak var notificationManager: NotificationManager?
     
-    private let locationManager = CLLocationManager()
-    private var locationContinuation: CheckedContinuation<CLLocation?, Never>?
-    
     private override init() {
         super.init()
         // 初期化時は状態チェックしない（オンボーディングで処理）
-        locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
-    }
-    
-    // CLLocationManagerDelegate
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        Task { @MainActor in
-            if let location = locations.last {
-                print("📍 位置情報更新: \(location.coordinate.latitude), \(location.coordinate.longitude)")
-                locationContinuation?.resume(returning: location)
-                locationContinuation = nil
-                locationManager.stopUpdatingLocation()
-            }
-        }
-    }
-    
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in
-            print("❌ 位置情報取得エラー: \(error.localizedDescription)")
-            locationContinuation?.resume(returning: nil)
-            locationContinuation = nil
-        }
     }
     
     // 全ての許可状態をチェック
@@ -163,7 +130,6 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             await checkScreenTimePermission()
             await checkNearbyInteractionPermission()
             await checkBluetoothPermission()
-            await checkLocationPermission()
         }
     }
     
@@ -188,13 +154,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 await requestNotificationsPermission()
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
-            
-            // 3. 位置情報許可
-            if permissionStatuses[.location] == .notDetermined {
-                currentRequestingPermission = .location
-                await requestLocationPermission()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
+        
             
             // 4. Bluetooth許可（間接的）
             if permissionStatuses[.bluetooth] == .notDetermined {
@@ -300,167 +260,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         print("🔔 通知最終状態: \(permissionStatuses[.notifications]?.displayText ?? "不明")")
     }
     
-    private func requestLocationPermission() async {
-        print("📍 PermissionManager: 位置情報許可をリクエスト")
-        
-        // 現在の状態を取得
-        let initialStatus = permissionStatuses[.location]
-        print("📍 初期状態: \(initialStatus?.displayText ?? "不明")")
-        
-        // まず「使用中の許可」を要求
-        locationManager.requestWhenInUseAuthorization()
-        
-        // ダイアログが表示されるまで少し待機
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
-        
-        // ダイアログが表示されて応答されるまで待機（最大20秒）
-        for i in 0..<40 {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
-            await checkLocationPermission()
-            
-            let currentStatus = permissionStatuses[.location]
-            if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📍 位置情報状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
-            }
-            
-            // 状態が変化したら次へ
-            if currentStatus != initialStatus && currentStatus != .notDetermined {
-                print("✅ 使用中の許可完了: \(currentStatus?.displayText ?? "不明")")
-                break
-            }
-        }
-        
-        // 少し待機してから「常に許可」を要求
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1秒
-        
-        print("📍 「常に許可」をリクエスト")
-        // 「常に許可」を要求
-        locationManager.requestAlwaysAuthorization()
-        
-        // 再度ダイアログが表示されて応答されるまで待機（最大20秒）
-        for i in 0..<40 {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
-            await checkLocationPermission()
-            
-            let currentStatus = permissionStatuses[.location]
-            if i % 4 == 0 { // 2秒ごとにログ出力
-                print("📍 常に許可状態チェック (\(i/2)秒): \(currentStatus?.displayText ?? "不明")")
-            }
-        }
-        
-        // 最終状態を確認
-        await checkLocationPermission()
-        let finalStatus = permissionStatuses[.location]
-        print("📍 位置情報最終状態: \(finalStatus?.displayText ?? "不明")")
-        
-        // 位置情報許可が得られた場合、現在地をジオフェンス住所として自動登録
-        if finalStatus == .granted {
-            await setupGeofenceWithCurrentLocation()
-        }
-    }
-    
-    // 現在地をジオフェンス住所として自動登録
-    private func setupGeofenceWithCurrentLocation() async {
-        print("🏠 現在地をジオフェンス住所として自動登録します")
-        
-        guard let uwbManager = uwbManager else {
-            print("❌ uwbManagerが設定されていません")
-            return
-        }
-        
-        // 現在地を取得
-        let currentLocation = await getCurrentLocation()
-        
-        if let location = currentLocation {
-            print("🏠 現在地取得成功: \(location.coordinate.latitude), \(location.coordinate.longitude)")
-            
-            // 住所を取得（逆ジオコーディング）
-            let address = await getAddressFromCoordinate(location.coordinate)
-            print("📍 住所取得: \(address)")
-            
-            // UWBManagerに現在地を自宅として設定（住所と半径も含む）
-            let radius = 50.0 // デフォルト半径50m
-            uwbManager.setHomeLocation(coordinate: location.coordinate, address: address, radius: radius)
-            uwbManager.geofencingEnabled = true
-            
-            // GeofencingSettingsView用にUserDefaultsにも保存
-            UserDefaults.standard.set(location.coordinate.latitude, forKey: "homeLatitude")
-            UserDefaults.standard.set(location.coordinate.longitude, forKey: "homeLongitude")
-            UserDefaults.standard.set(address, forKey: "homeAddress")
-            
-            print("✅ ジオフェンス設定完了")
-            print("   - 住所: \(address)")
-            print("   - 半径: \(radius)m")
-        } else {
-            print("⚠️ 現在地の取得に失敗しました")
-        }
-    }
-    
-    // 座標から住所を取得（逆ジオコーディング）
-    private func getAddressFromCoordinate(_ coordinate: CLLocationCoordinate2D) async -> String {
-        return await withCheckedContinuation { continuation in
-            let geocoder = CLGeocoder()
-            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            
-            geocoder.reverseGeocodeLocation(location) { placemarks, error in
-                if let error = error {
-                    print("❌ 逆ジオコーディングエラー: \(error.localizedDescription)")
-                    continuation.resume(returning: "住所取得失敗")
-                    return
-                }
-                
-                if let placemark = placemarks?.first {
-                    // 日本の住所形式で取得
-                    var addressComponents: [String] = []
-                    
-                    if let country = placemark.country {
-                        addressComponents.append(country)
-                    }
-                    if let postalCode = placemark.postalCode {
-                        addressComponents.append("〒\(postalCode)")
-                    }
-                    if let administrativeArea = placemark.administrativeArea {
-                        addressComponents.append(administrativeArea)
-                    }
-                    if let locality = placemark.locality {
-                        addressComponents.append(locality)
-                    }
-                    if let thoroughfare = placemark.thoroughfare {
-                        addressComponents.append(thoroughfare)
-                    }
-                    if let subThoroughfare = placemark.subThoroughfare {
-                        addressComponents.append(subThoroughfare)
-                    }
-                    
-                    let address = addressComponents.joined(separator: " ")
-                    continuation.resume(returning: address.isEmpty ? "住所不明" : address)
-                } else {
-                    continuation.resume(returning: "住所不明")
-                }
-            }
-        }
-    }
-    
-    // 現在地を取得（async/await）
-    private func getCurrentLocation() async -> CLLocation? {
-        return await withCheckedContinuation { continuation in
-            self.locationContinuation = continuation
-            
-            // 位置情報の更新を開始
-            locationManager.startUpdatingLocation()
-            
-            // タイムアウト処理（10秒）
-            Task {
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
-                if self.locationContinuation != nil {
-                    print("⚠️ 位置情報取得タイムアウト")
-                    self.locationContinuation?.resume(returning: nil)
-                    self.locationContinuation = nil
-                    self.locationManager.stopUpdatingLocation()
-                }
-            }
-        }
-    }
+
     
     private func requestBluetoothPermission() async {
         // Bluetoothの許可は実際のスキャン開始時に自動的に要求される
@@ -787,26 +587,6 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         permissionStatuses[.bluetooth] = permissionStatus
     }
     
-    private func checkLocationPermission() async {
-        let status = locationManager.authorizationStatus
-        let permissionStatus: PermissionStatus
-        
-        switch status {
-        case .notDetermined:
-            permissionStatus = .notDetermined
-        case .authorizedWhenInUse, .authorizedAlways:
-            permissionStatus = .granted
-        case .denied:
-            permissionStatus = .denied
-        case .restricted:
-            permissionStatus = .restricted
-        @unknown default:
-            permissionStatus = .notDetermined
-        }
-        
-        permissionStatuses[.location] = permissionStatus
-    }
-    
     // 特定の許可を個別に要求
     func requestPermission(_ type: PermissionType) {
         print("🚀 requestPermission呼び出し: \(type.displayName)")
@@ -826,8 +606,6 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 await requestNearbyInteractionPermission()
             case .bluetooth:
                 await requestBluetoothPermission()
-            case .location:
-                await requestLocationPermission()
             }
             
             print("🏁 \(type.displayName)のリクエスト処理完了、currentRequestingPermissionをnilに設定")
@@ -837,7 +615,7 @@ class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     // 全ての必要な許可が得られているかチェック
     var allRequiredPermissionsGranted: Bool {
-        let requiredPermissions: [PermissionType] = [.reminders, .notifications, .bluetooth, .screenTime, .location]
+        let requiredPermissions: [PermissionType] = [.reminders, .notifications, .bluetooth, .screenTime]
         return requiredPermissions.allSatisfy { 
             permissionStatuses[$0] == .granted 
         }

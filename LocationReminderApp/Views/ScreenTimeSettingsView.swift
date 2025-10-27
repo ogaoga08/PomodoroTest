@@ -756,20 +756,9 @@ class ScreenTimeManager: ObservableObject {
             object: nil
         )
         
-        // BGTaskSchedulerの登録
-        registerBackgroundTasks()
-        
+        // BGTaskSchedulerの登録はAppDelegateで一元管理（重複登録を防ぐ）
         print("📱 ScreenTime: バックグラウンド処理の設定完了")
-    }
-    
-    private func registerBackgroundTasks() {
-        // Screen Timeバックグラウンド処理タスクの登録
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: backgroundTaskIdentifier_screentime,
-            using: nil
-        ) { task in
-            self.handleBackgroundScreenTimeTask(task: task as! BGProcessingTask)
-        }
+        print("ℹ️  BGTaskScheduler登録はAppDelegateで実行済み")
     }
     
     @objc private func appDidEnterBackground() {
@@ -880,7 +869,8 @@ class ScreenTimeManager: ObservableObject {
         }
     }
     
-    private func handleBackgroundScreenTimeTask(task: BGProcessingTask) {
+    // AppDelegateから呼び出されるバックグラウンドタスクハンドラー
+    func handleBackgroundTask(task: BGAppRefreshTask) {
         print("🔄 ScreenTime: バックグラウンドメンテナンスタスク開始")
         
         task.expirationHandler = {

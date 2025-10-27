@@ -95,27 +95,76 @@ components.hour = (day % 2 == 0) ? 17 : 9  // 偶数日は17:00、奇数日は9:
 components.minute = 0
 ```
 
-### 4. メモ欄の URL を変更する
+### 4. メモ欄の URL を変更する（重要）
 
-Google Form の URL やその他の情報をメモ欄に設定：
+**URL は日ごとに異なるように設定されています。** `TaskModel.swift`の`InitialTaskGenerator`構造体内にある 3 つの URL 生成メソッドを編集してください：
+
+#### 4-1. 英単語課題の URL 設定
+
+`getVocabularyURL(for:)`メソッドを編集：
 
 ```swift
-// 現在のダミーURL
-let dummyURL = "https://forms.google.com/dummy"
+private static func getVocabularyURL(for day: Int) -> String {
+    // switch文を使って日ごとに異なるURLを返す
+    switch day {
+    case 1: return "https://forms.google.com/d/e/実際のID1/viewform"
+    case 2: return "https://forms.google.com/d/e/実際のID2/viewform"
+    case 3: return "https://forms.google.com/d/e/実際のID3/viewform"
+    case 4: return "https://forms.google.com/d/e/実際のID4/viewform"
+    case 5: return "https://forms.google.com/d/e/実際のID5/viewform"
+    case 6: return "https://forms.google.com/d/e/実際のID6/viewform"
+    case 7: return "https://forms.google.com/d/e/実際のID7/viewform"
+    case 8: return "https://forms.google.com/d/e/実際のID8/viewform"
+    case 9: return "https://forms.google.com/d/e/実際のID9/viewform"
+    case 10: return "https://forms.google.com/d/e/実際のID10/viewform"
+    case 11: return "https://forms.google.com/d/e/実際のID11/viewform"
+    case 12: return "https://forms.google.com/d/e/実際のID12/viewform"
+    case 13: return "https://forms.google.com/d/e/実際のID13/viewform"
+    case 14: return "https://forms.google.com/d/e/実際のID14/viewform"
+    default: return "https://forms.google.com/vocabulary-day\(day)"
+    }
+}
+```
 
-// 実際のURLに変更
-let vocabularyFormURL = "https://forms.google.com/d/e/xxxxx/viewform"
-let knowledgeFormURL = "https://forms.google.com/d/e/yyyyy/viewform"
-let videoFormURL = "https://forms.google.com/d/e/zzzzz/viewform"
+#### 4-2. 一般教養課題の URL 設定
 
-// タスク生成時に使い分ける
-tasks.append(InitialTaskData(
-    type: .vocabulary,
-    dayNumber: day,
-    title: "英単語課題\(day)日目",
-    memo: vocabularyFormURL,  // ← 種類ごとに異なるURL
-    dueDate: taskDate
-))
+`getGeneralKnowledgeURL(for:)`メソッドを編集：
+
+```swift
+private static func getGeneralKnowledgeURL(for day: Int) -> String {
+    switch day {
+    case 1: return "https://forms.google.com/d/e/知識ID1/viewform"
+    case 2: return "https://forms.google.com/d/e/知識ID2/viewform"
+    // ... 14日分設定
+    case 14: return "https://forms.google.com/d/e/知識ID14/viewform"
+    default: return "https://forms.google.com/knowledge-day\(day)"
+    }
+}
+```
+
+#### 4-3. 動画視聴課題の URL 設定
+
+`getVideoWatchingURL(for:)`メソッドを編集：
+
+```swift
+private static func getVideoWatchingURL(for day: Int) -> String {
+    switch day {
+    case 4: return "https://forms.google.com/d/e/動画ID4/viewform"
+    case 11: return "https://forms.google.com/d/e/動画ID11/viewform"
+    default: return "https://forms.google.com/video-day\(day)"
+    }
+}
+```
+
+#### 4-4. URL が同じパターンの場合
+
+もし URL が規則的なパターン（例: パラメータで日数を指定）の場合：
+
+```swift
+private static func getVocabularyURL(for day: Int) -> String {
+    // クエリパラメータで日数を指定する場合
+    return "https://forms.google.com/d/e/固定ID/viewform?entry.123456=\(day)"
+}
 ```
 
 ### 5. タスクの日数を変更する

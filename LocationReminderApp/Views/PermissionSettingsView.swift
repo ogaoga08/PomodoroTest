@@ -68,7 +68,6 @@ struct PermissionSettingsView: View {
                     PermissionRowView(permission: .notifications, permissionManager: permissionManager)
                     PermissionRowView(permission: .bluetooth, permissionManager: permissionManager)
                     PermissionRowView(permission: .screenTime, permissionManager: permissionManager)
-                    PermissionRowView(permission: .location, permissionManager: permissionManager)
                 }
                 
                 // 設定アクションセクション
