@@ -7,36 +7,10 @@
 		<string>com.locationreminder.app.uwb.maintenance</string>
 		<string>com.locationreminder.app.screentime.monitoring</string>
 	</array>
-	<!-- <key>NSExtension</key>
-	<dict>
-		<key>NSExtensionAttributes</key>
-		<dict>
-			<key>NSExtensionPointIdentifier</key>
-			<string>com.apple.ManagedSettingsUI.ShieldConfiguration</string>
-		</dict>
-		<key>NSExtensionPointIdentifier</key>
-		<string>com.apple.ManagedSettingsUI.ShieldConfiguration</string>
-		<key>NSExtensionPrincipalClass</key>
-		<string>LocationReminderApp.ShieldConfigurationExtension</string>
-	</dict> -->
-	<key>NSUserNotificationsUsageDescription</key>
-	<string>部屋への入退室状態を通知するために使用します。</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>UWBデバイスとの通信のためにBluetoothを使用します。</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。</string>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>リマインダーアプリと連携します。</string>
-	<key>NSNearbyInteractionUsageDescription</key>
-	<string>UWBデバイスとの精密な距離測定を行うために使用します。</string>
 	<key>NSFamilyControlsUsageDescription</key>
 	<string>アプリ使用制限機能を提供するためにFamily Controlsを使用します。</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>自宅に帰った際のUWBデバイス自動接続とタスク管理のため、位置情報を使用します。バックグラウンドでも動作するため、常に許可が必要です。</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>自宅に帰った際のUWBデバイス自動接続とタスク管理のため、位置情報を使用します。</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>部屋への入退室状態を通知するために使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

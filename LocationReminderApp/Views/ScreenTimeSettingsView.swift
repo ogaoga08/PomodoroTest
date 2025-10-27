@@ -608,22 +608,6 @@ class ScreenTimeManager: ObservableObject {
         return todaySessions.reduce(0) { $0 + $1.duration }
     }
     
-    // DeviceActivityReportを呼び出してカテゴリー別データを取得
-    func requestCategoryUsageData() {
-        print("📊 カテゴリー別使用時間データの取得をリクエスト")
-        
-        // DeviceActivityReportを呼び出してカテゴリーデータを処理
-        Task {
-            // DeviceActivityReportのコンテキストを指定してレポートを生成
-            // 注意: DeviceActivityReport.Context.categoryDataはエクステンション内で定義されているため、
-            // メインアプリからは直接アクセスできません
-            print("📊 DeviceActivityReportコンテキスト: categoryData")
-            
-            // レポートの生成をトリガー（実際のデータ処理はエクステンションで実行される）
-            print("📊 カテゴリー別データ処理をトリガーしました")
-        }
-    }
-    
     // 選択状態の詳細情報
     var selectionDetails: String {
         let appsCount = activitySelectionStore.selection.applicationTokens.count

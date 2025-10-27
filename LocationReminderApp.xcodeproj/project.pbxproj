@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -26,19 +26,8 @@
 		549040D82E82B9CE0045A3A1 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549040D72E82B9CE0045A3A1 /* PermissionManager.swift */; };
 		5493DAC12E2A234000881BC9 /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5493DAC02E2A234000881BC9 /* FamilyControls.framework */; };
 		54B55F502EA0E196006DE215 /* Untitled.icon in Resources */ = {isa = PBXBuildFile; fileRef = 54B55F4F2EA0E196006DE215 /* Untitled.icon */; };
-		54B55F612EA2534E006DE215 /* ScreenTimeReport.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 54B55F552EA2534E006DE215 /* ScreenTimeReport.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		54B55F832EA88F76006DE215 /* InitialTaskSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B55F822EA88F76006DE215 /* InitialTaskSetupView.swift */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		54B55F5F2EA2534E006DE215 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 1A1A1A1A1A1A1A0E /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 54B55F542EA2534E006DE215;
-			remoteInfo = ScreenTimeReport;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		54B55F662EA2534E006DE215 /* Embed ExtensionKit Extensions */ = {
@@ -47,7 +36,6 @@
 			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
 			dstSubfolderSpec = 16;
 			files = (
-				54B55F612EA2534E006DE215 /* ScreenTimeReport.appex in Embed ExtensionKit Extensions */,
 			);
 			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -77,23 +65,8 @@
 		549040D72E82B9CE0045A3A1 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		5493DAC02E2A234000881BC9 /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 		54B55F4F2EA0E196006DE215 /* Untitled.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Untitled.icon; sourceTree = "<group>"; };
-		54B55F552EA2534E006DE215 /* ScreenTimeReport.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = ScreenTimeReport.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		54B55F822EA88F76006DE215 /* InitialTaskSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialTaskSetupView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		54B55F622EA2534E006DE215 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 54B55F542EA2534E006DE215 /* ScreenTimeReport */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		54B55F562EA2534E006DE215 /* ScreenTimeReport */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (54B55F622EA2534E006DE215 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ScreenTimeReport; sourceTree = "<group>"; };
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		1A1A1A1A1A1A1A13 /* Frameworks */ = {
@@ -105,13 +78,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		54B55F522EA2534E006DE215 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -119,7 +85,6 @@
 			isa = PBXGroup;
 			children = (
 				1A1A1A1A1A1A1A18 /* LocationReminderApp */,
-				54B55F562EA2534E006DE215 /* ScreenTimeReport */,
 				5493DABF2E2A234000881BC9 /* Frameworks */,
 				1A1A1A1A1A1A1A17 /* Products */,
 			);
@@ -129,7 +94,6 @@
 			isa = PBXGroup;
 			children = (
 				1A1A1A1A1A1A1A16 /* LocationReminderApp.app */,
-				54B55F552EA2534E006DE215 /* ScreenTimeReport.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -209,34 +173,11 @@
 			buildRules = (
 			);
 			dependencies = (
-				54B55F602EA2534E006DE215 /* PBXTargetDependency */,
 			);
 			name = LocationReminderApp;
 			productName = PomodoroReminderApp;
 			productReference = 1A1A1A1A1A1A1A16 /* LocationReminderApp.app */;
 			productType = "com.apple.product-type.application";
-		};
-		54B55F542EA2534E006DE215 /* ScreenTimeReport */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 54B55F632EA2534E006DE215 /* Build configuration list for PBXNativeTarget "ScreenTimeReport" */;
-			buildPhases = (
-				54B55F512EA2534E006DE215 /* Sources */,
-				54B55F522EA2534E006DE215 /* Frameworks */,
-				54B55F532EA2534E006DE215 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				54B55F562EA2534E006DE215 /* ScreenTimeReport */,
-			);
-			name = ScreenTimeReport;
-			packageProductDependencies = (
-			);
-			productName = ScreenTimeReport;
-			productReference = 54B55F552EA2534E006DE215 /* ScreenTimeReport.appex */;
-			productType = "com.apple.product-type.extensionkit-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -250,9 +191,6 @@
 				TargetAttributes = {
 					1A1A1A1A1A1A1A15 = {
 						CreatedOnToolsVersion = 15.0;
-					};
-					54B55F542EA2534E006DE215 = {
-						CreatedOnToolsVersion = 26.0.1;
 					};
 				};
 			};
@@ -270,7 +208,6 @@
 			projectRoot = "";
 			targets = (
 				1A1A1A1A1A1A1A15 /* LocationReminderApp */,
-				54B55F542EA2534E006DE215 /* ScreenTimeReport */,
 			);
 		};
 /* End PBXProject section */
@@ -283,13 +220,6 @@
 				1A1A1A1A1A1A1A21 /* Preview Assets.xcassets in Resources */,
 				54B55F502EA0E196006DE215 /* Untitled.icon in Resources */,
 				1A1A1A1A1A1A1A1E /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		54B55F532EA2534E006DE215 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,22 +248,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		54B55F512EA2534E006DE215 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		54B55F602EA2534E006DE215 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 54B55F542EA2534E006DE215 /* ScreenTimeReport */;
-			targetProxy = 54B55F5F2EA2534E006DE215 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1A1A1A1A1A1A1A22 /* Debug */ = {
@@ -480,7 +395,7 @@
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "UWBデバイスとの精密な距離測定を行うために使用します。";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "リマインダーアプリと連携します。";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Appleのリマインダーアプリと連携します。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -526,7 +441,7 @@
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "UWBデバイスとのペアリングのためにBluetoothペリフェラル機能を使用します。";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "このアプリはリマインダーとタスクを同期するためにカレンダーへのアクセスを要求します。";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "UWBデバイスとの精密な距離測定を行うために使用します。";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "リマインダーアプリと連携します。";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Appleのリマインダーアプリと連携します。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -551,66 +466,6 @@
 			};
 			name = Release;
 		};
-		54B55F642EA2534E006DE215 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ScreenTimeReport/ScreenTimeReport.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = XB2W3692P2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = ScreenTimeReport/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = ScreenTimeReport;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.PomodoroReminderApp.ScreenTimeReport;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		54B55F652EA2534E006DE215 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ScreenTimeReport/ScreenTimeReport.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = XB2W3692P2;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = ScreenTimeReport/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = ScreenTimeReport;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.PomodoroReminderApp.ScreenTimeReport;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -628,15 +483,6 @@
 			buildConfigurations = (
 				1A1A1A1A1A1A1A25 /* Debug */,
 				1A1A1A1A1A1A1A26 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		54B55F632EA2534E006DE215 /* Build configuration list for PBXNativeTarget "ScreenTimeReport" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				54B55F642EA2534E006DE215 /* Debug */,
-				54B55F652EA2534E006DE215 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

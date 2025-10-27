@@ -84,16 +84,12 @@ struct StatisticsView: View {
             } message: {
                 Text("CSVデータをクリップボードにコピーしました")
             }
-            .onAppear {
-                // 統計画面表示時にカテゴリー別データの取得をリクエスト
-                screenTimeManager.requestCategoryUsageData()
-            }
         }
     }
     
     // CSV生成（1週間分）
     private func generateCSV() -> String {
-        var csv = "日付,完了タスク数,アプリ制限時間(分),総使用時間(分),Bubble外回数\n"
+        var csv = "日付,完了タスク数,アプリ制限時間(分),Bubble外回数\n"
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy/MM/dd"
@@ -105,24 +101,8 @@ struct StatisticsView: View {
             let stats = getDailyStatistics(for: date)
             let dateString = dateFormatter.string(from: date)
             let restrictionMinutes = Int(stats.totalRestrictionTime / 60)
-            let usageMinutes = Int(stats.totalUsageTime / 60)
-            csv += "\(dateString),\(stats.completedTasks.count),\(restrictionMinutes),\(usageMinutes),\(stats.bubbleOutsideCount)\n"
-            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, 使用\(usageMinutes)分, Bubble外\(stats.bubbleOutsideCount)回")
-        }
-        
-        csv += "\nカテゴリー別使用時間\n"
-        csv += "日付,カテゴリー名,使用時間(分)\n"
-        
-        var categoryCount = 0
-        for date in weekDates {
-            let stats = getDailyStatistics(for: date)
-            let dateString = dateFormatter.string(from: date)
-            
-            for category in stats.categoryUsageData {
-                let usageMinutes = Int(category.totalTime / 60)
-                csv += "\(dateString),\(category.categoryName),\(usageMinutes)\n"
-                categoryCount += 1
-            }
+            csv += "\(dateString),\(stats.completedTasks.count),\(restrictionMinutes),\(stats.bubbleOutsideCount)\n"
+            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, Bubble外\(stats.bubbleOutsideCount)回")
         }
         
         csv += "\n完了したタスク\n"
@@ -145,7 +125,6 @@ struct StatisticsView: View {
         }
         
         print("📊 完了タスク総数: \(taskCount)件")
-        print("📊 カテゴリーデータ総数: \(categoryCount)件")
         print("📊 CSV文字数: \(csv.count)")
         print("📊 CSV内容:\n\(csv)")
         
@@ -185,16 +164,11 @@ struct StatisticsView: View {
             restrictionSessions: restrictionSessions
         )
         
-        // カテゴリー別使用時間データを取得
-        let usageData = getDailyUsageData(for: date)
-        
         return DailyStatistics(
             date: date,
             completedTasks: completedTasks,
             totalRestrictionTime: totalRestrictionTime,
-            bubbleOutsideCount: bubbleOutsideCount,
-            totalUsageTime: usageData.totalUsageTime,
-            categoryUsageData: usageData.categoryData
+            bubbleOutsideCount: bubbleOutsideCount
         )
     }
     
@@ -257,27 +231,6 @@ struct StatisticsView: View {
         return sessions
     }
     
-    // App Groupsからカテゴリー別使用時間データを取得
-    private func getDailyUsageData(for date: Date) -> DailyUsageData {
-        guard let appGroupDefaults = UserDefaults(suiteName: "group.com.locationreminder.app.screentime"),
-              let data = appGroupDefaults.data(forKey: "daily_usage_data"),
-              let dailyUsageDataArray = try? JSONDecoder().decode([DailyUsageData].self, from: data) else {
-            print("📊 カテゴリー別データが見つかりません")
-            return DailyUsageData(date: date, totalUsageTime: 0, categoryData: [])
-        }
-        
-        // 指定された日付のデータを検索
-        let calendar = Calendar.current
-        if let matchingData = dailyUsageDataArray.first(where: { 
-            calendar.isDate($0.date, inSameDayAs: date) 
-        }) {
-            print("📊 カテゴリー別データを取得: \(matchingData.categoryData.count)カテゴリー")
-            return matchingData
-        }
-        
-        print("📊 指定日付のカテゴリー別データが見つかりません: \(date)")
-        return DailyUsageData(date: date, totalUsageTime: 0, categoryData: [])
-    }
 }
 
 // 日別統計カード（コンパクト版）
@@ -345,11 +298,6 @@ struct DayStatisticsCard: View {
                             color: .blue
                         )
                         
-                        StatBadge(
-                            icon: "iphone",
-                            value: formatMinutes(statistics.totalUsageTime),
-                            color: .purple
-                        )
                         
                         StatBadge(
                             icon: "location.slash.fill",
@@ -369,27 +317,6 @@ struct DayStatisticsCard: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 12) {
-                    // カテゴリー別使用時間
-                    if !statistics.categoryUsageData.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("カテゴリー別使用時間")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                            
-                            ForEach(statistics.categoryUsageData.prefix(3), id: \.categoryName) { category in
-                                CategoryUsageRow(category: category)
-                            }
-                            
-                            if statistics.categoryUsageData.count > 3 {
-                                Text("他 \(statistics.categoryUsageData.count - 3) カテゴリー")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.bottom, 8)
-                    }
-                    
                     // 完了したタスク
                     if statistics.completedTasks.isEmpty {
                         Text("完了したタスクはありません")
@@ -463,16 +390,11 @@ struct DayStatisticsCard: View {
             restrictionSessions: restrictionSessions
         )
         
-        // カテゴリー別使用時間データを取得
-        let usageData = getDailyUsageData(for: date)
-        
         return DailyStatistics(
             date: date,
             completedTasks: completedTasks,
             totalRestrictionTime: totalRestrictionTime,
-            bubbleOutsideCount: bubbleOutsideCount,
-            totalUsageTime: usageData.totalUsageTime,
-            categoryUsageData: usageData.categoryData
+            bubbleOutsideCount: bubbleOutsideCount
         )
     }
     
@@ -531,27 +453,6 @@ struct DayStatisticsCard: View {
         return sessions
     }
     
-    // App Groupsからカテゴリー別使用時間データを取得
-    private func getDailyUsageData(for date: Date) -> DailyUsageData {
-        guard let appGroupDefaults = UserDefaults(suiteName: "group.com.locationreminder.app.screentime"),
-              let data = appGroupDefaults.data(forKey: "daily_usage_data"),
-              let dailyUsageDataArray = try? JSONDecoder().decode([DailyUsageData].self, from: data) else {
-            print("📊 カテゴリー別データが見つかりません")
-            return DailyUsageData(date: date, totalUsageTime: 0, categoryData: [])
-        }
-        
-        // 指定された日付のデータを検索
-        let calendar = Calendar.current
-        if let matchingData = dailyUsageDataArray.first(where: { 
-            calendar.isDate($0.date, inSameDayAs: date) 
-        }) {
-            print("📊 カテゴリー別データを取得: \(matchingData.categoryData.count)カテゴリー")
-            return matchingData
-        }
-        
-        print("📊 指定日付のカテゴリー別データが見つかりません: \(date)")
-        return DailyUsageData(date: date, totalUsageTime: 0, categoryData: [])
-    }
 }
 
 // コンパクトな統計バッジ
@@ -617,54 +518,12 @@ struct CompactTaskRow: View {
     }
 }
 
-// カテゴリー別使用時間行
-struct CategoryUsageRow: View {
-    let category: CategoryUsageData
-    
-    private func formatMinutes(_ timeInterval: TimeInterval) -> String {
-        let minutes = Int(timeInterval / 60)
-        if minutes >= 60 {
-            let hours = minutes / 60
-            let remainingMinutes = minutes % 60
-            if remainingMinutes == 0 {
-                return "\(hours)h"
-            }
-            return "\(hours)h\(remainingMinutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "apps.iphone")
-                .font(.caption)
-                .foregroundColor(.purple)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category.categoryName)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                
-                Text(formatMinutes(category.totalTime))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 // 日別統計データ構造
 struct DailyStatistics {
     let date: Date
     let completedTasks: [CompletedTaskInfo]
     let totalRestrictionTime: TimeInterval
     let bubbleOutsideCount: Int
-    let totalUsageTime: TimeInterval
-    let categoryUsageData: [CategoryUsageData]
 }
 
 struct CompletedTaskInfo: Identifiable {
@@ -688,20 +547,6 @@ struct BubbleSession: Codable {
     let duration: TimeInterval
     let isOutside: Bool
     let taskId: String?
-}
-
-// カテゴリー別使用時間データ構造（エクステンションと同じ）
-struct CategoryUsageData: Codable {
-    let categoryName: String
-    let totalTime: TimeInterval
-    let appCount: Int
-    let date: Date
-}
-
-struct DailyUsageData: Codable {
-    let date: Date
-    let totalUsageTime: TimeInterval
-    let categoryData: [CategoryUsageData]
 }
 
 // ShareSheetのためのUIViewControllerRepresentable

@@ -7,6 +7,7 @@
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.example.PomodoroReminderApp</string>
+		<string>group.com.locationreminder.app.screentime</string>
 	</array>
 </dict>
 </plist>
