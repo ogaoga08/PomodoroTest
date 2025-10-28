@@ -289,20 +289,22 @@ struct DayStatisticsCard: View {
                         StatBadge(
                             icon: "checkmark.circle.fill",
                             value: "\(statistics.completedTasks.count)",
-                            color: .green
+                            color: .green,
+                            description: "完了タスク"
                         )
                         
                         StatBadge(
                             icon: "hourglass",
                             value: formatMinutes(statistics.totalRestrictionTime),
-                            color: .blue
+                            color: .blue,
+                            description: "制限時間"
                         )
-                        
                         
                         StatBadge(
                             icon: "location.slash.fill",
                             value: "\(statistics.bubbleOutsideCount)",
-                            color: .orange
+                            color: .orange,
+                            description: "Bubble外回数"
                         )
                         
                         Spacer()
@@ -460,18 +462,25 @@ struct StatBadge: View {
     let icon: String
     let value: String
     let color: Color
+    let description: String
     
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundColor(color)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(color)
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundColor(color)
+                Text(value)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(color)
+                    .fixedSize()
+            }
+            Text(description)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
                 .fixedSize()
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(color.opacity(0.12))
         .cornerRadius(8)
