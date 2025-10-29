@@ -1,7 +1,6 @@
 import SwiftUI
 import FamilyControls
 import ManagedSettings
-import DeviceActivity
 import UIKit
 import BackgroundTasks
 import ScreenTimeReport
@@ -999,17 +998,22 @@ struct ScreenTimeSettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(.red)
                         Text("カテゴリ選択")
                             .font(.headline)
+                            .foregroundColor(.red)
                     }
                     
-                    Text("「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリを選択してください。")
+                    Text("「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリのみを選択してください。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    Text("実験中はカテゴリーを変更しないでください！")
+                        .font(.caption)
+                        .foregroundColor(.red)
                 }
+                
             } header: {
-                Text("推奨設定")
+                Text("必須設定")
             }
             
             // アプリ選択

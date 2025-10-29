@@ -144,22 +144,6 @@ struct PermissionSettingsView: View {
                                 .font(.caption)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("位置情報について")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                
-                                Text("位置ベースのリマインダーを利用するには「常に許可」が推奨されます")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "3.circle.fill")
-                                .foregroundColor(.blue)
-                                .font(.caption)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
                                 Text("プライバシー")
                                     .font(.subheadline)
                                     .fontWeight(.medium)

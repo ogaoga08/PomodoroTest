@@ -212,22 +212,19 @@ struct PermissionOnboardingView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(.red)
                         Text("重要")
                             .font(.headline)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.red)
                     }
                     
-                    Text("「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリを選択してください")
+                    Text("必ず「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリのみ選択してください")
                         .font(.subheadline)
                         .foregroundColor(.primary)
                     
-                    Text("これらのカテゴリを選択することで、集中力を高めるためのアプリ制限が効果的に機能します。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
                 .padding()
-                .background(Color.orange.opacity(0.1))
+                .background(Color.red.opacity(0.1))
                 .cornerRadius(10)
                 .padding(.horizontal)
             }

@@ -2,7 +2,6 @@ import SwiftUI
 import EventKit
 import FamilyControls
 import ManagedSettings
-import DeviceActivity
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
