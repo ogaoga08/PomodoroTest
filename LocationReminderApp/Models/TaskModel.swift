@@ -831,6 +831,9 @@ class EventKitTaskManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             loadReminders()
+            
+            // タスク完了時に今日のスナップショットを更新（今日のみ）
+            updateTodaySnapshot()
         } catch {
             print("リマインダーの完了処理に失敗しました: \(error)")
         }
@@ -847,6 +850,9 @@ class EventKitTaskManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             loadReminders()
+            
+            // タスク未完了時に今日のスナップショットを更新（今日のみ）
+            updateTodaySnapshot()
         } catch {
             print("リマインダーの未完了処理に失敗しました: \(error)")
         }
@@ -1539,6 +1545,62 @@ class EventKitTaskManager: ObservableObject {
         
         return stats.reversed() // 古い順にソート
     }
+    
+    // MARK: - スナップショット管理
+    
+    /// 今日のタスク完了数スナップショットを更新（今日のみ）
+    private func updateTodaySnapshot() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // 今日完了したタスクの数を取得
+        let todayCompletedCount = completedTasks.filter { task in
+            guard let completedDate = task.completedDate else { return false }
+            return calendar.isDate(completedDate, inSameDayAs: today)
+        }.count
+        
+        // スナップショットを更新（今日のみ）
+        TaskSnapshotHelper.upsertSnapshot(for: today, completedCount: todayCompletedCount)
+        
+        print("📸 今日のスナップショット更新: \(todayCompletedCount)件")
+    }
+}
+
+// 日別スナップショットヘルパー（TaskModel用）
+fileprivate struct TaskDailySnapshot: Codable {
+    let date: Date
+    let completedCount: Int
+}
+
+fileprivate struct TaskSnapshotHelper {
+    private static let key = "daily_stats_snapshots"
+    
+    static func upsertSnapshot(for date: Date, completedCount: Int) {
+        var all = loadAll()
+        let calendar = Calendar.current
+        if let idx = all.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
+            all[idx] = TaskDailySnapshot(date: calendar.startOfDay(for: date), completedCount: completedCount)
+        } else {
+            all.append(TaskDailySnapshot(date: calendar.startOfDay(for: date), completedCount: completedCount))
+        }
+        let ninetyDaysAgo = Date().addingTimeInterval(-90 * 24 * 60 * 60)
+        all = all.filter { $0.date >= ninetyDaysAgo }
+        saveAll(all)
+    }
+    
+    private static func loadAll() -> [TaskDailySnapshot] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([TaskDailySnapshot].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+    
+    private static func saveAll(_ snapshots: [TaskDailySnapshot]) {
+        if let data = try? JSONEncoder().encode(snapshots) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
 }
 
 // MARK: - 初期タスク生成
@@ -1641,14 +1703,25 @@ struct InitialTaskGenerator {
     private static func getVocabularyURL(for day: Int) -> String {
         // ここに実際のGoogle FormのURLを日ごとに設定してください
         // 例: 
-        // switch day {
-        // case 1: return "https://forms.google.com/d/e/xxxxx1/viewform"
-        // case 2: return "https://forms.google.com/d/e/xxxxx2/viewform"
-        // ...
-        // default: return "https://forms.google.com/dummy"
-        // }
+        switch day {
+        case 1: return "https://forms.gle/9ExUG7V9f5iKNXpp9"
+        case 2: return "https://forms.gle/CUrAbAT9R8Zh8gMy8"
+        case 3: return "https://forms.gle/VMAAx2w5EW9qi1sj6"
+        case 4: return "https://forms.gle/WEKu5SNaK87eziEL8"
+        case 5: return "https://forms.gle/KEwgZzvgngWRLxGw8"
+        case 6: return "https://forms.gle/airgiAZWsLv8e2nM7"
+        case 7: return "https://forms.gle/4t1SQpd6iD1bBAcq5"
+        case 8: return "https://forms.gle/rUB4nA41j8xr8h3Y7"
+        case 9: return "https://forms.gle/tCKz3Xia9NfJF5996"
+        case 10: return "https://forms.gle/9pZiJ8UNWCLjC76g7"
+        case 11: return "https://forms.gle/p7aqbwTKDj8Uutsu6"
+        case 12: return "https://forms.gle/oAYFWEynPWRrmT3A8"
+        case 13: return "https://forms.gle/KCoHLKmaKj99xFZM6"
+        case 14: return "https://forms.gle/U6CkeaGNUH8ueGEa7"
         
-        return "https://forms.google.com/vocabulary-day\(day)"
+        default: return ""
+        }
+        
     }
     
     /// 一般教養課題のURLを取得
@@ -1656,8 +1729,25 @@ struct InitialTaskGenerator {
     /// - Returns: Google FormのURL
     private static func getGeneralKnowledgeURL(for day: Int) -> String {
         // ここに実際のGoogle FormのURLを日ごとに設定してください
+
+        switch day {
+        case 1: return "https://docs.google.com/forms/d/e/1FAIpQLScNDnq_WVfOeYnr8FfIRBVqxYpz7baEqa18HsI8rVCqU322Qw/viewform?usp=header"
+        case 2: return "https://docs.google.com/forms/d/e/1FAIpQLSc2URWEBq6Wk9lBljB_DI9vsHHH6fLG1DIMv8ZastfqQN8_2A/viewform?usp=header"
+        case 3: return "https://docs.google.com/forms/d/e/1FAIpQLSdqLxzyyv1dKZ9dGC_A8lTIW9k0d_TnE_NCUUKobAk0VqKhGA/viewform?usp=header"
+        case 4: return "https://docs.google.com/forms/d/e/1FAIpQLSdWFt_SXmFsjZ4IJmNhWe9B612NTgG0l31IyDo-1rCvOwsSmw/viewform?usp=header"
+        case 5: return "https://docs.google.com/forms/d/e/1FAIpQLSdkH0ctaW1NQVO3ISyWoXQ4pgpP25VAkgfectnKs31pvkASDQ/viewform?usp=header"
+        case 6: return "https://docs.google.com/forms/d/e/1FAIpQLSeIqTFdfe8zchVHkheKJfCMeEflEVs8knLH_ofl8p7OP1zLug/viewform?usp=header"
+        case 7: return "https://docs.google.com/forms/d/e/1FAIpQLSeph8V4V-TEt6VGwP9525RZYN1Jh0VOzdeeu7s9qajlRvLeBw/viewform?usp=header"
+        case 8: return "https://docs.google.com/forms/d/e/1FAIpQLSdDs-zDorpD3cV8k_H5Ggt6Lial8vbYnuHnK8dsb9eYx7S5Rw/viewform?usp=header"
+        case 9: return "https://docs.google.com/forms/d/e/1FAIpQLSfJWMV4q_zDIap2lN6_z6bsYIttKt_5OZVxdbI0eK-JDsNPXQ/viewform?usp=header"
+        case 10: return "https://docs.google.com/forms/d/e/1FAIpQLSevzZ00qX7oBBe1dZV4r2TQz3sxm0uiZfxjXtRSdrZqKLqHtw/viewform?usp=header"
+        case 11: return "https://docs.google.com/forms/d/e/1FAIpQLSfRIQEWbWAksa-YHmNHDOWKBHX04X29w5Cjd1ur9Q2Kc3qRSw/viewform?usp=publish-editor"
+        case 12: return ""
+        case 13: return ""
+        case 14: return ""
         
-        return "https://forms.google.com/knowledge-day\(day)"
+        default: return ""
+        }
     }
     
     /// 動画視聴課題のURLを取得

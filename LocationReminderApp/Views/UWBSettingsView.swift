@@ -1350,7 +1350,16 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             return
         }
         
-        let currentAttempt = repairAttempts[deviceID, default: 0] + 1
+        // スレッドセーフのため、メインスレッドで辞書読み取り
+        let currentAttempt: Int
+        if Thread.isMainThread {
+            currentAttempt = repairAttempts[deviceID, default: 0] + 1
+        } else {
+            currentAttempt = DispatchQueue.main.sync {
+                return repairAttempts[deviceID, default: 0] + 1
+            }
+        }
+        
         logger.info("🔄 再ペアリング試行 #\(currentAttempt): \(device.name)")
         
         // バックグラウンドモードの場合は、このrepair試行用にbackgroundTaskを開始
@@ -1409,8 +1418,14 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         logger.info("🔄 NISession再開始完了: \(device.name)")
         logger.info("   👉 次のステップ: session(_:didGenerateShareableConfigurationData:)の呼び出し待ち")
         
-        // 試行回数を更新（次の試行のために）
-        repairAttempts[deviceID] = currentAttempt
+        // 試行回数を更新（次の試行のために） - スレッドセーフ
+        if Thread.isMainThread {
+            repairAttempts[deviceID] = currentAttempt
+        } else {
+            DispatchQueue.main.async {
+                self.repairAttempts[deviceID] = currentAttempt
+            }
+        }
         
         // 成功の可能性があるので、少し待ってから結果を確認
         let verificationDelay: TimeInterval = self.isBackgroundMode ? 5.0 : 3.0
@@ -1436,20 +1451,21 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private func ensureDistanceMeasurementStarted(for device: UWBDevice) {
         let deviceID = device.uniqueID
         
-        logger.info("✅ 再ペアリング完了: NISessionは既に実行中: \(device.name)")
+        logger.info("✅ 再ペアリング完了: NISessionは実行中 - initializeメッセージ送信: \(device.name)")
         
-        // 🔧 重要: デバイス状態はconnectedのままにする
+        // デバイス状態はconnectedのままにする
         // ranging状態への変更は、accessoryUwbDidStartメッセージを受信した時に行う
-        // これにより、didGenerateShareableConfigurationDataで通知が送信されるのを防ぐ
         DispatchQueue.main.async {
             if device.status != .ranging {
                 device.status = DeviceStatus.connected
             }
         }
         
-        // 🔧 重要: 再ペアリング後は追加のメッセージ送信不要
-        // NISessionは既にrun()されており、didGenerateShareableConfigurationDataで
-        // configureAndStartメッセージが送信されるため、ここでは何もしない
+        // 🔧 重要: Qorvoサンプルコードに従い、initializeメッセージを送信
+        // NISessionはrun()されているが、アクセサリに設定データを要求する必要がある
+        let initMessage = Data([MessageId.initialize.rawValue])
+        sendDataToDevice(initMessage, device: device)
+        logger.info("📤 initializeメッセージ送信完了: \(device.name)")
         
         // デバイス情報は保存しておく
         if accessoryConfigurations[deviceID] != nil {
@@ -1458,7 +1474,7 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         updateConnectionStatus()
         
-        logger.info("ℹ️ 距離データはNISessionのdidUpdateで自動的に受信されます")
+        logger.info("👉 次のステップ: アクセサリからの設定データ応答待ち")
     }
     
     // 距離計測開始の確認とリトライ処理
@@ -1579,8 +1595,19 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     private func scheduleNextRepairAttempt(for device: UWBDevice, delay: TimeInterval? = nil) {
         let deviceID = device.uniqueID
-        let currentAttempts = repairAttempts[deviceID, default: 0] + 1
-        repairAttempts[deviceID] = currentAttempts
+        
+        // スレッドセーフのため、メインスレッドで辞書操作
+        let currentAttempts: Int
+        if Thread.isMainThread {
+            currentAttempts = repairAttempts[deviceID, default: 0] + 1
+            repairAttempts[deviceID] = currentAttempts
+        } else {
+            currentAttempts = DispatchQueue.main.sync {
+                let attempts = repairAttempts[deviceID, default: 0] + 1
+                repairAttempts[deviceID] = attempts
+                return attempts
+            }
+        }
         
         // 最大試行回数をチェック
         if currentAttempts >= maxRepairAttempts {
@@ -3107,7 +3134,7 @@ struct UWBSettingsView: View {
                     VStack(spacing: 8) {
                         HStack {
                             Image(systemName: uwbManager.isInSecureBubble ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundColor(uwbManager.isInSecureBubble ? .green : .red)
+                                .foregroundColor(uwbManager.isInSecureBubble ? .red : .green)
                             Text("Secure Bubble: \(uwbManager.isInSecureBubble ? "内部" : "外部")")
                                 .font(.caption)
                                 .foregroundColor(.secondary)

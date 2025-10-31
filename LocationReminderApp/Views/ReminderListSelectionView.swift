@@ -72,6 +72,23 @@ struct ReminderListSelectionView: View {
                         }
                         .padding(.horizontal)
                         
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundColor(.red)
+                                Text("注意")
+                                    .font(.headline)
+                                    .foregroundColor(.red)
+                            }
+                            
+                            Text("実験用リストを選択してください。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("実験中はリストを変更しないでください！")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        
                         List(availableLists, id: \.calendarIdentifier) { list in
                             ReminderListRowView(
                                 list: list,

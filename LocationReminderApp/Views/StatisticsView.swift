@@ -1,6 +1,52 @@
 import SwiftUI
 import UIKit
 
+// 日別スナップショットヘルパー（ファイルレベル）
+fileprivate struct DailyStatsSnapshot: Codable {
+    let date: Date
+    let completedCount: Int
+}
+
+fileprivate struct DailyStatsSnapshotHelper {
+    private static let key = "daily_stats_snapshots"
+    
+    static func loadCompletedCount(for date: Date) -> Int? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let snapshots = try? JSONDecoder().decode([DailyStatsSnapshot].self, from: data) else {
+            return nil
+        }
+        let calendar = Calendar.current
+        return snapshots.first { calendar.isDate($0.date, inSameDayAs: date) }?.completedCount
+    }
+    
+    static func upsertSnapshot(for date: Date, completedCount: Int) {
+        var all = loadAll()
+        let calendar = Calendar.current
+        if let idx = all.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
+            all[idx] = DailyStatsSnapshot(date: calendar.startOfDay(for: date), completedCount: completedCount)
+        } else {
+            all.append(DailyStatsSnapshot(date: calendar.startOfDay(for: date), completedCount: completedCount))
+        }
+        let ninetyDaysAgo = Date().addingTimeInterval(-90 * 24 * 60 * 60)
+        all = all.filter { $0.date >= ninetyDaysAgo }
+        saveAll(all)
+    }
+    
+    private static func loadAll() -> [DailyStatsSnapshot] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([DailyStatsSnapshot].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+    
+    private static func saveAll(_ snapshots: [DailyStatsSnapshot]) {
+        if let data = try? JSONEncoder().encode(snapshots) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+}
+
 struct StatisticsView: View {
     @ObservedObject var taskManager: TaskManager
     @Environment(\.dismiss) private var dismiss
@@ -10,11 +56,11 @@ struct StatisticsView: View {
     @State private var csvText = ""
     @State private var showCopiedAlert = false
     
-    // 今日から過去6日分（計7日分）
+    // 今日から過去13日分（計14日分）
     private var weekDates: [Date] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        return (0..<7).compactMap { offset in
+        return (0..<14).compactMap { offset in
             calendar.date(byAdding: .day, value: -offset, to: today)
         }.reversed()
     }
@@ -84,6 +130,10 @@ struct StatisticsView: View {
             } message: {
                 Text("CSVデータをクリップボードにコピーしました")
             }
+            .onAppear {
+                // 過去14日分のスナップショットを確定（今日以外）
+                ensurePastSnapshots()
+            }
         }
     }
     
@@ -101,12 +151,12 @@ struct StatisticsView: View {
             let stats = getDailyStatistics(for: date)
             let dateString = dateFormatter.string(from: date)
             let restrictionMinutes = Int(stats.totalRestrictionTime / 60)
-            csv += "\(dateString),\(stats.completedTasks.count),\(restrictionMinutes),\(stats.bubbleOutsideCount)\n"
+            csv += "\(dateString),\(stats.completedCount),\(restrictionMinutes),\(stats.bubbleOutsideCount)\n"
             print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, Bubble外\(stats.bubbleOutsideCount)回")
         }
         
         csv += "\n完了したタスク\n"
-        csv += "日付,タスク名,登録時刻,完了時刻\n"
+        csv += "日付,タスク名,通知時刻,完了時刻\n"
         
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm"
@@ -117,9 +167,9 @@ struct StatisticsView: View {
             let dateString = dateFormatter.string(from: date)
             
             for task in stats.completedTasks {
-                let createdTimeString = task.creationDate != nil ? timeFormatter.string(from: task.creationDate!) : "不明"
+                let dueTimeString = timeFormatter.string(from: task.dueDate)
                 let completedTimeString = timeFormatter.string(from: task.completedDate)
-                csv += "\(dateString),\(task.title),\(createdTimeString),\(completedTimeString)\n"
+                csv += "\(dateString),\(task.title),\(dueTimeString),\(completedTimeString)\n"
                 taskCount += 1
             }
         }
@@ -145,7 +195,7 @@ struct StatisticsView: View {
             }
             return CompletedTaskInfo(
                 title: task.title,
-                creationDate: task.creationDate,
+                dueDate: task.dueDate,
                 completedDate: completedDate
             )
         }.sorted { $0.completedDate < $1.completedDate }
@@ -164,14 +214,20 @@ struct StatisticsView: View {
             restrictionSessions: restrictionSessions
         )
         
+        // 完了数は日跨ぎ後はスナップショットを優先
+        let today = calendar.startOfDay(for: Date())
+        let snapshotCount = DailyStatsSnapshotHelper.loadCompletedCount(for: date)
+        let completedCount = date < today ? (snapshotCount ?? completedTasks.count) : completedTasks.count
+
         return DailyStatistics(
             date: date,
             completedTasks: completedTasks,
+            completedCount: completedCount,
             totalRestrictionTime: totalRestrictionTime,
             bubbleOutsideCount: bubbleOutsideCount
         )
     }
-    
+
     // アプリ制限中のBubble外回数をカウント
     private func countBubbleOutsideDuringRestriction(
         date: Date,
@@ -231,6 +287,30 @@ struct StatisticsView: View {
         return sessions
     }
     
+    // MARK: - スナップショット関連
+    private func ensurePastSnapshots() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        print("📸 スナップショット確認開始")
+        
+        // 過去14日分（今日を除く）をチェック
+        for offset in 1..<15 {
+            guard let pastDate = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            
+            // スナップショットが存在しない場合のみ保存
+            if DailyStatsSnapshotHelper.loadCompletedCount(for: pastDate) == nil {
+                let stats = getDailyStatistics(for: pastDate)
+                DailyStatsSnapshotHelper.upsertSnapshot(for: pastDate, completedCount: stats.completedTasks.count)
+                
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy/MM/dd"
+                print("📸 \(dateFormatter.string(from: pastDate)): スナップショット保存 (\(stats.completedTasks.count)件)")
+            }
+        }
+        
+        print("📸 スナップショット確認完了")
+    }
 }
 
 // 日別統計カード（コンパクト版）
@@ -288,7 +368,7 @@ struct DayStatisticsCard: View {
                     HStack(spacing: 8) {
                         StatBadge(
                             icon: "checkmark.circle.fill",
-                            value: "\(statistics.completedTasks.count)",
+                            value: "\(statistics.completedCount)",
                             color: .green,
                             description: "完了タスク"
                         )
@@ -375,7 +455,7 @@ struct DayStatisticsCard: View {
             }
             return CompletedTaskInfo(
                 title: task.title,
-                creationDate: task.creationDate,
+                dueDate: task.dueDate,
                 completedDate: completedDate
             )
         }.sorted { $0.completedDate < $1.completedDate }
@@ -392,9 +472,15 @@ struct DayStatisticsCard: View {
             restrictionSessions: restrictionSessions
         )
         
+        // 完了数（過去日はスナップショット優先）
+        let today = calendar.startOfDay(for: Date())
+        let snapshotCount = DailyStatsSnapshotHelper.loadCompletedCount(for: date)
+        let completedCount = date < today ? (snapshotCount ?? completedTasks.count) : completedTasks.count
+
         return DailyStatistics(
             date: date,
             completedTasks: completedTasks,
+            completedCount: completedCount,
             totalRestrictionTime: totalRestrictionTime,
             bubbleOutsideCount: bubbleOutsideCount
         )
@@ -509,11 +595,9 @@ struct CompactTaskRow: View {
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
-                    if let creationDate = task.creationDate {
-                        Label(timeFormatter.string(from: creationDate), systemImage: "plus.circle")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    Label(timeFormatter.string(from: task.dueDate), systemImage: "bell")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                     
                     Label(timeFormatter.string(from: task.completedDate), systemImage: "checkmark.circle")
                         .font(.caption2)
@@ -531,6 +615,7 @@ struct CompactTaskRow: View {
 struct DailyStatistics {
     let date: Date
     let completedTasks: [CompletedTaskInfo]
+    let completedCount: Int
     let totalRestrictionTime: TimeInterval
     let bubbleOutsideCount: Int
 }
@@ -538,7 +623,7 @@ struct DailyStatistics {
 struct CompletedTaskInfo: Identifiable {
     let id = UUID()
     let title: String
-    let creationDate: Date?
+    let dueDate: Date  // 通知時刻（登録時刻）
     let completedDate: Date
 }
 

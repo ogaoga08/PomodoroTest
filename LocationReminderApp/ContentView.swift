@@ -476,6 +476,21 @@ private func isAuthorizedForReminders(_ status: EKAuthorizationStatus) -> Bool {
     }
 }
 
+// ヘルパー関数：文字列からURLを抽出
+private func extractURL(from text: String) -> URL? {
+    // URLを検出するための正規表現パターン
+    let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    let matches = detector?.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
+    
+    if let match = matches?.first, let range = Range(match.range, in: text) {
+        let urlString = String(text[range])
+        return URL(string: urlString)
+    }
+    
+    // 正規表現で検出できなかった場合、直接URL作成を試みる
+    return URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines))
+}
+
 struct TaskRowView: View {
     let task: TaskItem
     let isTemporarilyCompleted: Bool
@@ -543,10 +558,26 @@ struct TaskRowView: View {
                 }
                 
                 if !task.memo.isEmpty {
-                    Text(task.cleanMemo)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                    if let url = extractURL(from: task.cleanMemo) {
+                        Button(action: {
+                            UIApplication.shared.open(url)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "link")
+                                    .font(.caption2)
+                                Text(task.cleanMemo)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    } else {
+                        Text(task.cleanMemo)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
                 }
                 
                 Text(task.formattedDueDate)
