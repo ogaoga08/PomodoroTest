@@ -36,7 +36,7 @@ enum PermissionType: String, CaseIterable {
         case .notifications:
             return "重要な通知をお送りするために必要です"
         case .screenTime:
-            return "アプリの使用制限機能のために必要です"
+            return "アプリの使用制限機能のために必要です。許可後、スクリーンタイム設定からカテゴリを選択してください"
         case .nearbyInteraction:
             return "UWBデバイスとの精密な距離測定のために必要です"
         case .bluetooth:

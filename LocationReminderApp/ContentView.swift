@@ -115,7 +115,8 @@ struct ContentView: View {
                                             isTemporarilyCompleted: temporaryCompletedTasks.contains(task.id),
                                             onTap: { selectedTask = task },
                                             onComplete: { handleTaskCompletion(task) },
-                                            taskManager: taskManager
+                                            taskManager: taskManager,
+                                            enableHyperlink: true
                                         )
                                         .swipeActions(edge: .trailing) {
                                             Button("削除", role: .destructive) {
@@ -158,7 +159,8 @@ struct ContentView: View {
                                             isTemporarilyCompleted: temporaryCompletedTasks.contains(task.id),
                                             onTap: { selectedTask = task },
                                             onComplete: { handleTaskCompletion(task) },
-                                            taskManager: taskManager
+                                            taskManager: taskManager,
+                                            enableHyperlink: false
                                         )
                                         .swipeActions(edge: .trailing) {
                                             Button("削除", role: .destructive) {
@@ -396,8 +398,9 @@ struct ContentView: View {
             
             // 初回起動時に自動的にオンボーディングを表示
             if !hasCompletedOnboarding {
-                // 少し遅延させて表示（UIの初期化を待つ）
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                // TestFlightの初回画面（通知許可・規約同意）が表示されるのを待つため、
+                // より長い遅延を設定（UIの初期化とTestFlight画面の完了を待つ）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     showingPermissionOnboarding = true
                 }
             } else {
@@ -497,6 +500,7 @@ struct TaskRowView: View {
     let onTap: () -> Void
     let onComplete: () -> Void
     @ObservedObject var taskManager: TaskManager
+    let enableHyperlink: Bool // ハイパーリンク化を有効にするかどうか
     
     private var isShowingAsCompleted: Bool {
         task.isCompleted || isTemporarilyCompleted
@@ -558,7 +562,7 @@ struct TaskRowView: View {
                 }
                 
                 if !task.memo.isEmpty {
-                    if let url = extractURL(from: task.cleanMemo) {
+                    if enableHyperlink, let url = extractURL(from: task.cleanMemo) {
                         Button(action: {
                             UIApplication.shared.open(url)
                         }) {

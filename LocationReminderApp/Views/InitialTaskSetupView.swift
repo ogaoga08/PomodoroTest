@@ -20,6 +20,7 @@ struct InitialTaskSetupView: View {
                 )
                 .ignoresSafeArea()
                 
+                
                 VStack(spacing: 0) {
                     // スクロール可能なコンテンツ
                     ScrollView {
@@ -78,7 +79,7 @@ struct InitialTaskSetupView: View {
                             }
                             .padding()
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.8))
+//                            .background(Color.gray.opacity(0.98))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal)
                             
@@ -95,7 +96,7 @@ struct InitialTaskSetupView: View {
                                 )
                                 .datePickerStyle(.graphical)
                                 .padding(8)
-                                .background(Color.white.opacity(0.8))
+//                                .background(Color.secondary.opacity(0.98))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .padding(.horizontal)

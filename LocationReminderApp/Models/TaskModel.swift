@@ -1742,9 +1742,9 @@ struct InitialTaskGenerator {
         case 9: return "https://docs.google.com/forms/d/e/1FAIpQLSfJWMV4q_zDIap2lN6_z6bsYIttKt_5OZVxdbI0eK-JDsNPXQ/viewform?usp=header"
         case 10: return "https://docs.google.com/forms/d/e/1FAIpQLSevzZ00qX7oBBe1dZV4r2TQz3sxm0uiZfxjXtRSdrZqKLqHtw/viewform?usp=header"
         case 11: return "https://docs.google.com/forms/d/e/1FAIpQLSfRIQEWbWAksa-YHmNHDOWKBHX04X29w5Cjd1ur9Q2Kc3qRSw/viewform?usp=publish-editor"
-        case 12: return ""
-        case 13: return ""
-        case 14: return ""
+        case 12: return "https://docs.google.com/forms/d/e/1FAIpQLSe8HN4V3E0CtbS9VjFUe1rTitiKAwEE9fNagiddDUfY1iQBYA/viewform?usp=header"
+        case 13: return "https://docs.google.com/forms/d/e/1FAIpQLSdZwXjGJ6h8yCi48LHupUCM4ftliUl-ZgYH5GfgqRSWCdbJLg/viewform?usp=publish-editor"
+        case 14: return "https://docs.google.com/forms/d/e/1FAIpQLSejcNi3KRCcYXAafTkCu2fKRZdclLJ6PLQxzdqVOFTXzu39mQ/viewform?usp=publish-editor"
         
         default: return ""
         }
@@ -1759,11 +1759,11 @@ struct InitialTaskGenerator {
         
         switch day {
         case 4:
-            return "https://forms.google.com/video-day4"
+            return "https://docs.google.com/forms/d/e/1FAIpQLSeqw3Wd51hiymkF65gEV4fevXfLOU7vxJsq9ru_YJZetuoO_w/viewform?usp=header"
         case 11:
-            return "https://forms.google.com/video-day11"
+            return "https://docs.google.com/forms/d/e/1FAIpQLSeX2Hod29ugIJA-UpARzNT_BzbjHdl-pJWd4s1iDZFBClQX-g/viewform?usp=header"
         default:
-            return "https://forms.google.com/video-day\(day)"
+            return ""
         }
     }
 }

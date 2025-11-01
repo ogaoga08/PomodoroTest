@@ -72,7 +72,7 @@ struct ReminderListSelectionView: View {
                         }
                         .padding(.horizontal)
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        Section{VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: "info.circle.fill")
                                     .foregroundColor(.red)
@@ -88,6 +88,8 @@ struct ReminderListSelectionView: View {
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
+                        .padding(.horizontal)}
+                        
                         
                         List(availableLists, id: \.calendarIdentifier) { list in
                             ReminderListRowView(

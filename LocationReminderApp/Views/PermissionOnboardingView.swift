@@ -2,11 +2,9 @@ import SwiftUI
 
 struct PermissionOnboardingView: View {
     @ObservedObject var permissionManager = PermissionManager.shared
-    @StateObject private var screenTimeManager = ScreenTimeManager()
     @State private var currentStep = 0
     @State private var isRequestingPermission = false
     @State private var previousRequestingPermission: PermissionType? = nil
-    @State private var showCategorySelection = false
     @Environment(\.dismiss) private var dismiss
     
     private let permissions: [PermissionType] = [
@@ -160,25 +158,6 @@ struct PermissionOnboardingView: View {
                 }
             }
         }
-        .onChange(of: screenTimeManager.isAuthorized) { isAuth in
-            // Screen Time認証が完了し、現在のステップがScreen Timeの場合
-            if isAuth && currentStep < permissions.count && permissions[currentStep] == .screenTime {
-                print("✅ Screen Time認証完了 - カテゴリ選択画面を表示")
-                // 0.5秒後にカテゴリ選択画面を自動表示
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    showCategorySelection = true
-                }
-            }
-        }
-        .familyActivityPicker(
-            isPresented: $showCategorySelection,
-            selection: $screenTimeManager.activitySelectionStore.selection
-        )
-        .onChange(of: screenTimeManager.activitySelectionStore.selection) { newValue in
-            // 選択を保存
-            print("📝 カテゴリ選択完了 - 保存中")
-            screenTimeManager.activitySelectionStore.saveSelection()
-        }
     }
     
     @ViewBuilder
@@ -206,28 +185,6 @@ struct PermissionOnboardingView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            
-            // Screen Timeステップの場合のガイダンス
-            if permission == .screenTime {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        Text("重要")
-                            .font(.headline)
-                            .foregroundColor(.red)
-                    }
-                    
-                    Text("必ず「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリのみ選択してください")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                    
-                }
-                .padding()
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(10)
-                .padding(.horizontal)
-            }
             
             // 現在の状態
             HStack {

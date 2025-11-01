@@ -3,7 +3,6 @@ import FamilyControls
 import ManagedSettings
 import UIKit
 import BackgroundTasks
-import ScreenTimeReport
 
 // FamilyActivitySelectionを永続化するためのヘルパー
 class FamilyActivitySelectionStore: ObservableObject {
@@ -1081,7 +1080,13 @@ struct ScreenTimeSettingsView: View {
             } header: {
                 Text("制限対象アプリ")
             } footer: {
-                Text("FamilyActivityPickerを使用してシステムのアプリ選択画面を表示します。")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("FamilyActivityPickerを使用してシステムのアプリ選択画面を表示します。")
+                    
+//                    Text("推奨：「ソーシャル」「ゲーム」「エンターテイメント」のカテゴリを選択することをお勧めします。")
+//                        .foregroundColor(.orange)
+//                        .fontWeight(.medium)
+                }
             }
         }
         .navigationTitle("Screen Time設定")
