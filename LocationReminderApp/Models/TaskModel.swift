@@ -252,6 +252,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var parentId: UUID? = nil // 親タスクのID（サブタスクの場合）
     var isSubtask: Bool = false // サブタスクかどうか
     var subtaskOrder: Int = 0 // サブタスクの順序
+    var concentrationLevel: Int? = nil // 集中度合い（1〜5）
     
     // 明示的な初期化子
     init(title: String, memo: String, dueDate: Date, hasTime: Bool = true, priority: TaskPriority = .none, recurrenceType: RecurrenceType = .none, locationReminder: LocationReminder = LocationReminder(), alarms: [TaskAlarm] = [], tags: [String] = [], parentId: UUID? = nil, isSubtask: Bool = false, subtaskOrder: Int = 0) {
@@ -331,11 +332,13 @@ struct TaskItem: Identifiable, Equatable, Codable {
         
         // サブタスク情報の抽出（メモから）
         let memoAndTags = TaskItem.extractMemoAndTags(from: self.memo)
-        let subtaskInfo = TaskItem.extractSubtaskInfo(from: memoAndTags.memo)
+        let (cleanMemo, concentration) = TaskItem.extractConcentrationLevel(from: memoAndTags.memo)
+        let subtaskInfo = TaskItem.extractSubtaskInfo(from: cleanMemo)
         self.memo = subtaskInfo.memo
         self.parentId = subtaskInfo.parentId
         self.isSubtask = subtaskInfo.isSubtask
         self.subtaskOrder = subtaskInfo.subtaskOrder
+        self.concentrationLevel = concentration
     }
     
     static func == (lhs: TaskItem, rhs: TaskItem) -> Bool {
@@ -423,6 +426,28 @@ struct TaskItem: Identifiable, Equatable, Codable {
         }
         
         return (memoText, nil, false, 0)
+    }
+    
+    // 集中度合いをメモから抽出
+    static func extractConcentrationLevel(from memoText: String) -> (memo: String, concentrationLevel: Int?) {
+        let pattern = #"\[concentration: (\d+)\]"#
+        let regex = try! NSRegularExpression(pattern: pattern, options: [])
+        let range = NSRange(memoText.startIndex..<memoText.endIndex, in: memoText)
+        
+        if let match = regex.firstMatch(in: memoText, options: [], range: range) {
+            let levelRange = Range(match.range(at: 1), in: memoText)!
+            let levelString = String(memoText[levelRange])
+            
+            let fullMatchRange = Range(match.range, in: memoText)!
+            let memoWithoutConcentration = memoText.replacingCharacters(in: fullMatchRange, with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            if let level = Int(levelString), level >= 1 && level <= 5 {
+                return (memoWithoutConcentration, level)
+            }
+        }
+        
+        return (memoText, nil)
     }
     
     // サブタスク情報を含むメモを生成（EventKit保存用）
@@ -820,13 +845,41 @@ class EventKitTaskManager: ObservableObject {
         }
     }
     
-    func completeTask(_ task: TaskItem) {
+    func completeTask(_ task: TaskItem, concentrationLevel: Int? = nil) {
         guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
               let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
         
         reminder.isCompleted = true
         reminder.completionDate = Date()
+        
+        // 集中度合いをメモに保存
+        if let level = concentrationLevel {
+            var updatedTask = task
+            updatedTask.concentrationLevel = level
+            
+            // メモに集中度合いを追加
+            let concentrationTag = "[concentration: \(level)]"
+            if reminder.notes?.contains("[concentration:") == true {
+                // 既存の集中度合いタグを置換
+                let pattern = #"\[concentration: \d+\]"#
+                if let regex = try? NSRegularExpression(pattern: pattern) {
+                    let range = NSRange(reminder.notes!.startIndex..<reminder.notes!.endIndex, in: reminder.notes!)
+                    reminder.notes = regex.stringByReplacingMatches(
+                        in: reminder.notes!,
+                        range: range,
+                        withTemplate: concentrationTag
+                    )
+                }
+            } else {
+                // 新規に集中度合いタグを追加
+                if let notes = reminder.notes, !notes.isEmpty {
+                    reminder.notes = "\(notes)\n\(concentrationTag)"
+                } else {
+                    reminder.notes = concentrationTag
+                }
+            }
+        }
         
         do {
             try eventStore.save(reminder, commit: true)

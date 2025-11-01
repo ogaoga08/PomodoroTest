@@ -139,7 +139,7 @@ struct StatisticsView: View {
     
     // CSV生成（1週間分）
     private func generateCSV() -> String {
-        var csv = "日付,完了タスク数,アプリ制限時間(分),Bubble外回数\n"
+        var csv = "日付,完了タスク数,アプリ制限時間(分),Bubble外回数,平均集中度合い\n"
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy/MM/dd"
@@ -151,12 +151,24 @@ struct StatisticsView: View {
             let stats = getDailyStatistics(for: date)
             let dateString = dateFormatter.string(from: date)
             let restrictionMinutes = Int(stats.totalRestrictionTime / 60)
-            csv += "\(dateString),\(stats.completedCount),\(restrictionMinutes),\(stats.bubbleOutsideCount)\n"
-            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, Bubble外\(stats.bubbleOutsideCount)回")
+            
+            // 平均集中度合いを計算
+            let tasksWithConcentration = stats.completedTasks.compactMap { $0.concentrationLevel }
+            let avgConcentration: String
+            if !tasksWithConcentration.isEmpty {
+                let sum = tasksWithConcentration.reduce(0, +)
+                let avg = Double(sum) / Double(tasksWithConcentration.count)
+                avgConcentration = String(format: "%.1f", avg)
+            } else {
+                avgConcentration = ""
+            }
+            
+            csv += "\(dateString),\(stats.completedCount),\(restrictionMinutes),\(stats.bubbleOutsideCount),\(avgConcentration)\n"
+            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, Bubble外\(stats.bubbleOutsideCount)回, 平均集中度\(avgConcentration)")
         }
         
         csv += "\n完了したタスク\n"
-        csv += "日付,タスク名,通知時刻,完了時刻\n"
+        csv += "日付,タスク名,通知時刻,完了時刻,集中度合い\n"
         
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm"
@@ -169,7 +181,8 @@ struct StatisticsView: View {
             for task in stats.completedTasks {
                 let dueTimeString = timeFormatter.string(from: task.dueDate)
                 let completedTimeString = timeFormatter.string(from: task.completedDate)
-                csv += "\(dateString),\(task.title),\(dueTimeString),\(completedTimeString)\n"
+                let concentrationString = task.concentrationLevel.map { String($0) } ?? ""
+                csv += "\(dateString),\(task.title),\(dueTimeString),\(completedTimeString),\(concentrationString)\n"
                 taskCount += 1
             }
         }
@@ -196,7 +209,8 @@ struct StatisticsView: View {
             return CompletedTaskInfo(
                 title: task.title,
                 dueDate: task.dueDate,
-                completedDate: completedDate
+                completedDate: completedDate,
+                concentrationLevel: task.concentrationLevel
             )
         }.sorted { $0.completedDate < $1.completedDate }
         
@@ -335,6 +349,21 @@ struct DayStatisticsCard: View {
         Calendar.current.isDateInToday(date)
     }
     
+    private var averageConcentration: Double? {
+        let tasksWithConcentration = statistics.completedTasks.compactMap { $0.concentrationLevel }
+        guard !tasksWithConcentration.isEmpty else { return nil }
+        let sum = tasksWithConcentration.reduce(0, +)
+        return Double(sum) / Double(tasksWithConcentration.count)
+    }
+    
+    private func concentrationColorForAverage(_ avg: Double) -> Color {
+        if avg >= 4.5 { return .green }
+        else if avg >= 3.5 { return .blue }
+        else if avg >= 2.5 { return .gray }
+        else if avg >= 1.5 { return .orange }
+        else { return .red }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // ヘッダー部分
@@ -386,6 +415,16 @@ struct DayStatisticsCard: View {
                             color: .orange,
                             description: "Bubble外回数"
                         )
+                        
+                        // 平均集中度合い
+                        if let avgConcentration = averageConcentration {
+                            StatBadge(
+                                icon: "brain.head.profile",
+                                value: String(format: "%.1f", avgConcentration),
+                                color: concentrationColorForAverage(avgConcentration),
+                                description: "平均集中度"
+                            )
+                        }
                         
                         Spacer()
                     }
@@ -456,7 +495,8 @@ struct DayStatisticsCard: View {
             return CompletedTaskInfo(
                 title: task.title,
                 dueDate: task.dueDate,
-                completedDate: completedDate
+                completedDate: completedDate,
+                concentrationLevel: task.concentrationLevel
             )
         }.sorted { $0.completedDate < $1.completedDate }
         
@@ -590,9 +630,26 @@ struct CompactTaskRow: View {
                 .foregroundColor(.green)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
-                    .font(.subheadline)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(task.title)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    
+                    // 集中度合いバッジ
+                    if let level = task.concentrationLevel {
+                        HStack(spacing: 2) {
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 10))
+                            Text("\(level)")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(concentrationColor(level))
+                        .cornerRadius(4)
+                    }
+                }
                 
                 HStack(spacing: 8) {
                     Label(timeFormatter.string(from: task.dueDate), systemImage: "bell")
@@ -601,13 +658,31 @@ struct CompactTaskRow: View {
                     
                     Label(timeFormatter.string(from: task.completedDate), systemImage: "checkmark.circle")
                         .font(.caption2)
-                        .foregroundColor(.green)
+                        .foregroundColor(isCompletedOnTime(task: task) ? .green : .red)
                 }
             }
             
             Spacer()
         }
         .padding(.vertical, 6)
+    }
+    
+    private func concentrationColor(_ level: Int) -> Color {
+        switch level {
+        case 5: return .green
+        case 4: return .blue
+        case 3: return .gray
+        case 2: return .orange
+        case 1: return .red
+        default: return .gray
+        }
+    }
+    
+    private func isCompletedOnTime(task: CompletedTaskInfo) -> Bool {
+        let calendar = Calendar.current
+        let dueDay = calendar.startOfDay(for: task.dueDate)
+        let completedDay = calendar.startOfDay(for: task.completedDate)
+        return completedDay <= dueDay
     }
 }
 
@@ -625,6 +700,7 @@ struct CompletedTaskInfo: Identifiable {
     let title: String
     let dueDate: Date  // 通知時刻（登録時刻）
     let completedDate: Date
+    let concentrationLevel: Int? // 集中度合い
 }
 
 // セッションデータ構造
