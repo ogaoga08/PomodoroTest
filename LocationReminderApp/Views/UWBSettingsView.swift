@@ -410,7 +410,7 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var repairAttemptCount: Int = 0 // 再ペアリング試行回数
     
     // デバッグ通知設定
-    @Published var uwbPairingDebugNotificationEnabled = true // UWBペアリングデバッグ通知が有効か
+    @Published var uwbPairingDebugNotificationEnabled = false // UWBペアリングデバッグ通知が有効か
     
     // TaskManagerへの参照を追加
     weak var taskManager: EventKitTaskManager?
