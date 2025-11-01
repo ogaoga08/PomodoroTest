@@ -17,6 +17,9 @@ struct ContentView: View {
     @State private var showingMenu = false
     @State private var showingPermissionOnboarding = false
     @State private var showingInitialTaskSetup = false
+    @State private var showingConcentrationDialog = false
+    @State private var taskToComplete: TaskItem? = nil
+    @State private var selectedConcentrationLevel: Int = 3
     
     // 初回起動判定用
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
@@ -125,9 +128,9 @@ struct ContentView: View {
                                         }
                                          .swipeActions(edge: .leading) {
                                              Button("完了") {
-                                                 taskManager.completeTask(task)
-                                                 // タスク完了後にScreen Time制限を再評価
-                                                 screenTimeManager.handleTaskCompletion()
+                                                 taskToComplete = task
+                                                 selectedConcentrationLevel = 3
+                                                 showingConcentrationDialog = true
                                              }
                                              .tint(.green)
                                          }
@@ -169,9 +172,9 @@ struct ContentView: View {
                                         }
                                         .swipeActions(edge: .leading) {
                                             Button("完了") {
-                                                taskManager.completeTask(task)
-                                                // タスク完了後にScreen Time制限を再評価
-                                                screenTimeManager.handleTaskCompletion()
+                                                taskToComplete = task
+                                                selectedConcentrationLevel = 3
+                                                showingConcentrationDialog = true
                                             }
                                             .tint(.green)
                                         }
@@ -380,6 +383,25 @@ struct ContentView: View {
         .sheet(isPresented: $showingInitialTaskSetup) {
             InitialTaskSetupView(taskManager: taskManager)
         }
+        .sheet(isPresented: $showingConcentrationDialog) {
+            ConcentrationLevelDialog(
+                selectedLevel: $selectedConcentrationLevel,
+                onComplete: {
+                    if let task = taskToComplete {
+                        taskManager.completeTask(task, concentrationLevel: selectedConcentrationLevel)
+                        screenTimeManager.handleTaskCompletion()
+                        showingConcentrationDialog = false
+                        taskToComplete = nil
+                    }
+                },
+                onCancel: {
+                    showingConcentrationDialog = false
+                    taskToComplete = nil
+                }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .onAppear {
             // 各マネージャー間の参照を設定
             uwbManager.taskManager = taskManager
@@ -456,14 +478,15 @@ struct ContentView: View {
         // 一時的に完了状態にする
         temporaryCompletedTasks.insert(task.id)
         
-        // 2秒後に実際の完了処理を実行
-        let timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
-            taskManager.completeTask(task)
+        // 0.2秒後に集中度合いダイアログを表示
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { _ in
             pendingCompletions.removeValue(forKey: task.id)
             temporaryCompletedTasks.remove(task.id)
             
-            // タスク完了後にScreen Time制限を再評価
-            screenTimeManager.handleTaskCompletion()
+            // 集中度合いダイアログを表示
+            taskToComplete = task
+            selectedConcentrationLevel = 3
+            showingConcentrationDialog = true
         }
         
         pendingCompletions[task.id] = timer
@@ -638,6 +661,86 @@ struct CompletedTaskRowView: View {
             .buttonStyle(PlainButtonStyle())
         }
         .padding(.vertical, 2)
+    }
+}
+
+// 集中度合い選択ダイアログ
+struct ConcentrationLevelDialog: View {
+    @Binding var selectedLevel: Int
+    let onComplete: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // タイトル
+            Text("集中度合いを選択してください")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding(.top, 40)
+                .frame(maxWidth: .infinity, alignment: .center)
+            
+            // 説明文
+            VStack(alignment: .leading, spacing: 4) {
+                Text("5 とても集中できた")
+                Text("4 集中できた")
+                Text("3 どちらとも言えない")
+                Text("2 集中できなかった")
+                Text("1 全く集中できなかった")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+            
+            // ラジオボタン（横1列、1〜5）
+            HStack(spacing: 16) {
+                ConcentrationButton(level: 1, selectedLevel: $selectedLevel)
+                ConcentrationButton(level: 2, selectedLevel: $selectedLevel)
+                ConcentrationButton(level: 3, selectedLevel: $selectedLevel)
+                ConcentrationButton(level: 4, selectedLevel: $selectedLevel)
+                ConcentrationButton(level: 5, selectedLevel: $selectedLevel)
+            }
+            .padding(.vertical)
+            .frame(maxWidth: .infinity, alignment: .center)
+            
+            // 完了ボタン
+            Button(action: onComplete) {
+                Text("完了")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .cornerRadius(10)
+            }
+            .padding(.horizontal, 40)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .background(Color.clear)
+        .interactiveDismissDisabled(false) // ダイアログ外タップでキャンセル可能
+    }
+}
+
+// 集中度合いボタン
+struct ConcentrationButton: View {
+    let level: Int
+    @Binding var selectedLevel: Int
+    
+    var body: some View {
+        Button(action: {
+            selectedLevel = level
+        }) {
+            VStack(spacing: 8) {
+                Image(systemName: selectedLevel == level ? "circle.fill" : "circle")
+                    .foregroundColor(selectedLevel == level ? .blue : .gray)
+                    .font(.system(size: 24))
+                
+                Text("\(level)")
+                    .font(.headline)
+                    .foregroundColor(selectedLevel == level ? .primary : .secondary)
+            }
+            .frame(width: 50, height: 60)
+        }
     }
 }
 
