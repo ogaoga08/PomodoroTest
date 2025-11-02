@@ -1724,11 +1724,11 @@ struct InitialTaskGenerator {
                 dueDate: taskDate
             ))
             
-            // 一般教養課題（日ごとに異なるURL）
+            // IT課題（日ごとに異なるURL）
             tasks.append(InitialTaskData(
                 type: .generalKnowledge,
                 dayNumber: day,
-                title: "一般教養課題\(day)日目",
+                title: "ITパスポート課題\(day)日目",
                 memo: getGeneralKnowledgeURL(for: day),
                 dueDate: taskDate
             ))
@@ -1777,7 +1777,7 @@ struct InitialTaskGenerator {
         
     }
     
-    /// 一般教養課題のURLを取得
+    /// IT課題のURLを取得
     /// - Parameter day: 日数（1〜14）
     /// - Returns: Google FormのURL
     private static func getGeneralKnowledgeURL(for day: Int) -> String {

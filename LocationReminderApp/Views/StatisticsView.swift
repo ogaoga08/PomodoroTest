@@ -90,22 +90,7 @@ struct StatisticsView: View {
                             .cornerRadius(8)
                         }
                         
-                        // 共有シート
-                        Button(action: {
-                            csvText = generateCSV()
-                            showShareSheet = true
-                        }) {
-                            HStack {
-                                Image(systemName: "square.and.arrow.up")
-                                Text("共有")
-                            }
-                            .font(.subheadline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                        }
+                        
                     }
                     .padding(.horizontal)
                     .padding(.top, 8)
