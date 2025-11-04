@@ -191,6 +191,11 @@ struct TaskDetailView: View {
         updatedTask.parentId = task.parentId
         updatedTask.isSubtask = task.isSubtask
         updatedTask.subtaskOrder = task.subtaskOrder
+        updatedTask.eventKitIdentifier = task.eventKitIdentifier // リマインダーアプリとの同期に必要
+        updatedTask.isCompleted = task.isCompleted // 完了状態を保持
+        updatedTask.completedDate = task.completedDate // 完了日時を保持
+        updatedTask.creationDate = task.creationDate // 作成日時を保持
+        updatedTask.concentrationLevel = task.concentrationLevel // 集中度を保持
         
         // 既存のアラーム情報を保持し、必要に応じて更新
         if task.hasTime != editedHasTime || task.dueDate != editedDueDate {
@@ -222,7 +227,11 @@ struct TaskDetailView: View {
             updatedTask.alarms = task.alarms
         }
         
+        print("🔄 タスクを更新: \(updatedTask.title), eventKitIdentifier: \(updatedTask.eventKitIdentifier ?? "nil")")
         taskManager.updateTask(updatedTask)
+        
+        // タスクの更新を画面に反映（Bindingを更新）
+        task = updatedTask
     }
 }
 

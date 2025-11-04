@@ -675,11 +675,11 @@ class EventKitTaskManager: ObservableObject {
         }
         
         // 期限日の設定
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: task.dueDate)
-        if task.hasTime {
-            let timeComponents = Calendar.current.dateComponents([.hour, .minute], from: task.dueDate)
-            components.hour = timeComponents.hour
-            components.minute = timeComponents.minute
+        var components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .timeZone], from: task.dueDate)
+        if !task.hasTime {
+            // 時刻が設定されていない場合、時刻コンポーネントをクリア
+            components.hour = nil
+            components.minute = nil
         }
         reminder.dueDateComponents = components
         
@@ -747,7 +747,13 @@ class EventKitTaskManager: ObservableObject {
     func updateTask(_ task: TaskItem) {
         guard isAuthorized(),
               let identifier = task.eventKitIdentifier,
-              let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
+              let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            print("⚠️ リマインダーの更新に失敗: eventKitIdentifier=\(task.eventKitIdentifier ?? "nil")")
+            return
+        }
+        
+        print("📝 リマインダーを更新: \(task.title), 期限: \(task.dueDate)")
+        print("   - 更新前の期限: \(reminder.dueDateComponents?.date ?? Date())")
         
         reminder.title = task.isSubtask ? "└ \(task.title)" : task.title
         reminder.notes = task.memoWithSubtaskInfo
@@ -763,13 +769,16 @@ class EventKitTaskManager: ObservableObject {
         reminder.alarms?.forEach { reminder.removeAlarm($0) }
         
         // 期限日の更新
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: task.dueDate)
-        if task.hasTime {
-            let timeComponents = Calendar.current.dateComponents([.hour, .minute], from: task.dueDate)
-            components.hour = timeComponents.hour
-            components.minute = timeComponents.minute
+        var components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .timeZone], from: task.dueDate)
+        if !task.hasTime {
+            // 時刻が設定されていない場合、時刻コンポーネントをクリア
+            components.hour = nil
+            components.minute = nil
         }
         reminder.dueDateComponents = components
+        
+        print("   - 更新後の期限: \(reminder.dueDateComponents?.date ?? Date())")
+        print("   - hasTime: \(task.hasTime), components: year=\(components.year ?? 0), month=\(components.month ?? 0), day=\(components.day ?? 0), hour=\(components.hour ?? -1), minute=\(components.minute ?? -1), timeZone=\(components.timeZone?.identifier ?? "nil")")
         
         // 複数アラームの設定
         if !task.alarms.isEmpty {
@@ -821,6 +830,18 @@ class EventKitTaskManager: ObservableObject {
         
         do {
             try eventStore.save(reminder, commit: true)
+            print("✅ リマインダーの更新に成功: \(task.title)")
+            
+            // ローカルのタスク配列も即座に更新（UI反映を高速化）
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                tasks[index] = task
+                print("📱 ローカルタスク配列を更新: インデックス \(index)")
+            } else if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
+                completedTasks[index] = task
+                print("📱 完了済みタスク配列を更新: インデックス \(index)")
+            }
+            
+            // EventKitから最新のデータを取得（非同期で更新）
             loadReminders()
             
             // タスク更新後にScreen Time制限を再評価
@@ -828,7 +849,7 @@ class EventKitTaskManager: ObservableObject {
                 NotificationCenter.default.post(name: .taskUpdated, object: nil)
             }
         } catch {
-            print("リマインダーの更新に失敗しました: \(error)")
+            print("❌ リマインダーの更新に失敗しました: \(error)")
         }
     }
     

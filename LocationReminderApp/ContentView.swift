@@ -348,9 +348,10 @@ struct ContentView: View {
             
         }
         .sheet(item: $selectedTask) { task in
-            if let taskIndex = taskManager.getParentTasks().firstIndex(where: { $0.id == task.id }) {
+            // tasksまたはcompletedTasksから直接インデックスを検索（親タスク/サブタスクに関わらず）
+            if let taskIndex = taskManager.tasks.firstIndex(where: { $0.id == task.id }) {
                 TaskDetailView(task: $taskManager.tasks[taskIndex], taskManager: taskManager)
-            } else if let completedTaskIndex = taskManager.getCompletedParentTasks().firstIndex(where: { $0.id == task.id }) {
+            } else if let completedTaskIndex = taskManager.completedTasks.firstIndex(where: { $0.id == task.id }) {
                 TaskDetailView(task: $taskManager.completedTasks[completedTaskIndex], taskManager: taskManager)
             }
         }
