@@ -31,6 +31,11 @@ class NotificationManager: NSObject, ObservableObject {
     // ScreenTimeManagerへの参照を追加
     weak var screenTimeManager: ScreenTimeManager?
     
+    // 1日1回の通知制限用
+    private let userDefaults = UserDefaults.standard
+    private let lastInBubbleNotificationKey = "lastInBubbleNotificationDate"
+    private let lastOutBubbleNotificationKey = "lastOutBubbleNotificationDate"
+    
     private override init() {
         super.init()
         setupNotificationCenter()
@@ -123,8 +128,38 @@ class NotificationManager: NSObject, ObservableObject {
         }
     }
 
+    // 今日既に通知を送信したかチェック
+    private func shouldSendNotificationToday(isInBubble: Bool) -> Bool {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        let key = isInBubble ? lastInBubbleNotificationKey : lastOutBubbleNotificationKey
+        
+        if let lastDate = userDefaults.object(forKey: key) as? Date {
+            let lastNotificationDay = calendar.startOfDay(for: lastDate)
+            
+            // 同じ日であれば通知をスキップ
+            if lastNotificationDay == today {
+                print("📵 通知スキップ: \(isInBubble ? "Bubble内" : "Bubble外")通知は本日既に送信済み")
+                return false
+            }
+        }
+        
+        return true
+    }
+    
+    // 通知送信日時を記録
+    private func recordNotificationSent(isInBubble: Bool) {
+        let key = isInBubble ? lastInBubbleNotificationKey : lastOutBubbleNotificationKey
+        userDefaults.set(Date(), forKey: key)
+        print("📝 通知送信を記録: \(isInBubble ? "Bubble内" : "Bubble外")通知")
+    }
+    
     func setRoomStatusNotification(deviceName: String, isInBubble: Bool, todayTasks: [TaskItem] = []) {
         guard isAuthorized else { return }
+        
+        // 1日1回の制限をチェック
+        guard shouldSendNotificationToday(isInBubble: isInBubble) else { return }
         
         let content = UNMutableNotificationContent()
         content.title = "Territory"
@@ -169,6 +204,9 @@ class NotificationManager: NSObject, ObservableObject {
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("通知送信エラー: \(error.localizedDescription)")
+            } else {
+                // 通知送信成功時に記録
+                self.recordNotificationSent(isInBubble: isInBubble)
             }
         }
     }
