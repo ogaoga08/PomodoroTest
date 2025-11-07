@@ -34,7 +34,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         ) { task in
             print("📱 BGTask実行: UWB再接続")
             // UWBManagerはシングルトンなので直接呼び出し可能
-            UWBManager.shared.handleBackgroundMaintenanceTaskWrapper(task: task as! BGAppRefreshTask)
+            // 安全なキャストでクラッシュを防ぐ
+            guard let appRefreshTask = task as? BGAppRefreshTask else {
+                print("⚠️ タスク型が不正です: \(type(of: task))")
+                task.setTaskCompleted(success: false)
+                return
+            }
+            UWBManager.shared.handleBackgroundMaintenanceTaskWrapper(task: appRefreshTask)
         }
         
         print("✅ BGTaskScheduler登録完了")

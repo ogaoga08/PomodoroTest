@@ -398,7 +398,7 @@ struct DayStatisticsCard: View {
                             icon: "location.slash.fill",
                             value: "\(statistics.bubbleOutsideCount)",
                             color: .orange,
-                            description: "Bubble外回数"
+                            description: "入退室回数"
                         )
                         
                         // 平均集中度合い
