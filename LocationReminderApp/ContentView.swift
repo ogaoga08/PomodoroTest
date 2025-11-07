@@ -674,7 +674,7 @@ struct ConcentrationLevelDialog: View {
     var body: some View {
         VStack(spacing: 24) {
             // タイトル
-            Text("集中度合いを選択してください")
+            Text("集中度を選択してください")
                 .font(.title2)
                 .fontWeight(.bold)
                 .padding(.top, 40)

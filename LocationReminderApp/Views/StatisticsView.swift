@@ -124,7 +124,7 @@ struct StatisticsView: View {
     
     // CSV生成（1週間分）
     private func generateCSV() -> String {
-        var csv = "日付,完了タスク数,アプリ制限時間(分),Bubble外回数,平均集中度合い\n"
+        var csv = "日付,完了タスク数,アプリ制限時間(分),入退室回数,平均集中度合い\n"
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy/MM/dd"
@@ -149,7 +149,7 @@ struct StatisticsView: View {
             }
             
             csv += "\(dateString),\(stats.completedCount),\(restrictionMinutes),\(stats.bubbleOutsideCount),\(avgConcentration)\n"
-            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, Bubble外\(stats.bubbleOutsideCount)回, 平均集中度\(avgConcentration)")
+            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, 入退室\(stats.bubbleOutsideCount)回, 平均集中度\(avgConcentration)")
         }
         
         csv += "\n完了したタスク\n"
@@ -228,6 +228,7 @@ struct StatisticsView: View {
     }
 
     // アプリ制限中のBubble外回数をカウント
+    // Screen Time制限アプリが未選択でも、タスク時刻以降〜完了までの仮想制限期間を含める
     private func countBubbleOutsideDuringRestriction(
         date: Date,
         bubbleSessions: [BubbleSession],
@@ -236,14 +237,36 @@ struct StatisticsView: View {
         let calendar = Calendar.current
         var count = 0
         
+        // 実際の制限セッションに加えて、仮想制限期間も生成
+        let virtualRestrictionSessions = generateVirtualRestrictionSessions(for: date)
+        let allRestrictionSessions = mergeRestrictionSessions(
+            actual: restrictionSessions,
+            virtual: virtualRestrictionSessions
+        )
+        
+        // デバッグログ
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy/MM/dd"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        
+        print("📊 入退室回数集計: \(dateFormatter.string(from: date))")
+        print("  - 実制限セッション数: \(restrictionSessions.count)")
+        print("  - 仮想制限セッション数: \(virtualRestrictionSessions.count)")
+        print("  - マージ後セッション数: \(allRestrictionSessions.count)")
+        
+        for (idx, session) in allRestrictionSessions.enumerated() {
+            print("  - セッション\(idx + 1): \(timeFormatter.string(from: session.startTime)) - \(timeFormatter.string(from: session.endTime))")
+        }
+        
         for bubbleSession in bubbleSessions {
             guard bubbleSession.isOutside,
                   calendar.isDate(bubbleSession.startTime, inSameDayAs: date) else {
                 continue
             }
             
-            // このBubbleセッションが制限時間と重なっているかチェック
-            for restrictionSession in restrictionSessions {
+            // このBubbleセッションが制限時間（実際または仮想）と重なっているかチェック
+            for restrictionSession in allRestrictionSessions {
                 if sessionsOverlap(
                     bubbleStart: bubbleSession.startTime,
                     bubbleEnd: bubbleSession.endTime,
@@ -251,12 +274,126 @@ struct StatisticsView: View {
                     restrictionEnd: restrictionSession.endTime
                 ) {
                     count += 1
+                    print("  ✅ カウント: \(timeFormatter.string(from: bubbleSession.startTime)) - \(timeFormatter.string(from: bubbleSession.endTime))")
                     break
                 }
             }
         }
         
+        print("  📈 合計入退室回数: \(count)")
+        
         return count
+    }
+    
+    // 未完了タスクから仮想制限期間を生成
+    // タスク時刻以降〜完了時刻（または日の終わり）までを制限期間とみなす
+    private func generateVirtualRestrictionSessions(for date: Date) -> [RestrictionSession] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        var virtualSessions: [RestrictionSession] = []
+        
+        // 対象日のタスクを取得（時刻設定済みのもの）
+        let tasksForDate = taskManager.getParentTasks().filter { task in
+            calendar.isDate(task.dueDate, inSameDayAs: date) && task.hasTime
+        }
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        
+        print("  🔍 仮想制限期間生成: 対象タスク数 \(tasksForDate.count)")
+        
+        for task in tasksForDate {
+            let taskTime = task.dueDate
+            
+            // タスク時刻が対象日内にあることを確認
+            guard taskTime >= startOfDay && taskTime < endOfDay else { continue }
+            
+            // 終了時刻を決定
+            let endTime: Date
+            let reason: String
+            if let completedDate = task.completedDate,
+               completedDate >= taskTime && completedDate < endOfDay {
+                // 対象日内に完了している場合は完了時刻まで
+                endTime = completedDate
+                reason = "完了時刻"
+            } else if !task.isCompleted {
+                // 未完了の場合は日の終わりまで（または現在時刻まで）
+                let now = Date()
+                if calendar.isDate(now, inSameDayAs: date) {
+                    endTime = min(now, endOfDay)
+                    reason = "現在時刻"
+                } else if date < calendar.startOfDay(for: now) {
+                    // 過去の日付なら日の終わりまで
+                    endTime = endOfDay
+                    reason = "日の終わり（過去）"
+                } else {
+                    // 未来の日付ならスキップ
+                    print("    ⏭️ スキップ: \(task.title) - 未来の日付")
+                    continue
+                }
+            } else {
+                // 別の日に完了している場合は日の終わりまで
+                endTime = endOfDay
+                reason = "日の終わり（別日完了）"
+            }
+            
+            // 開始時刻より終了時刻が後の場合のみセッションを作成
+            if endTime > taskTime {
+                let session = RestrictionSession(
+                    startTime: taskTime,
+                    endTime: endTime,
+                    duration: endTime.timeIntervalSince(taskTime),
+                    taskId: task.id.uuidString
+                )
+                virtualSessions.append(session)
+                print("    ✅ 仮想セッション作成: \(task.title)")
+                print("       \(timeFormatter.string(from: taskTime)) - \(timeFormatter.string(from: endTime)) (\(reason))")
+            }
+        }
+        
+        return virtualSessions
+    }
+    
+    // 実際の制限セッションと仮想制限セッションをマージ（重複を排除）
+    private func mergeRestrictionSessions(
+        actual: [RestrictionSession],
+        virtual: [RestrictionSession]
+    ) -> [RestrictionSession] {
+        var allSessions = actual + virtual
+        
+        // 開始時刻でソート
+        allSessions.sort { $0.startTime < $1.startTime }
+        
+        // 重複する期間をマージ
+        var merged: [RestrictionSession] = []
+        
+        for session in allSessions {
+            if merged.isEmpty {
+                merged.append(session)
+            } else {
+                let last = merged[merged.count - 1]
+                
+                // 前のセッションと重なっている、または連続している場合はマージ
+                if session.startTime <= last.endTime {
+                    // より遅い終了時刻を採用
+                    let newEndTime = max(last.endTime, session.endTime)
+                    let newSession = RestrictionSession(
+                        startTime: last.startTime,
+                        endTime: newEndTime,
+                        duration: newEndTime.timeIntervalSince(last.startTime),
+                        taskId: last.taskId ?? session.taskId
+                    )
+                    merged[merged.count - 1] = newSession
+                } else {
+                    // 重ならない場合は新規追加
+                    merged.append(session)
+                }
+            }
+        }
+        
+        return merged
     }
     
     // セッションの重なりをチェック
@@ -511,6 +648,8 @@ struct DayStatisticsCard: View {
         )
     }
     
+    // アプリ制限中のBubble外回数をカウント（DayStatisticsCard用）
+    // Screen Time制限アプリが未選択でも、タスク時刻以降〜完了までの仮想制限期間を含める
     private func countBubbleOutsideDuringRestriction(
         date: Date,
         bubbleSessions: [BubbleSession],
@@ -519,13 +658,21 @@ struct DayStatisticsCard: View {
         let calendar = Calendar.current
         var count = 0
         
+        // 実際の制限セッションに加えて、仮想制限期間も生成
+        let virtualRestrictionSessions = generateVirtualRestrictionSessions(for: date)
+        let allRestrictionSessions = mergeRestrictionSessions(
+            actual: restrictionSessions,
+            virtual: virtualRestrictionSessions
+        )
+        
         for bubbleSession in bubbleSessions {
             guard bubbleSession.isOutside,
                   calendar.isDate(bubbleSession.startTime, inSameDayAs: date) else {
                 continue
             }
             
-            for restrictionSession in restrictionSessions {
+            // このBubbleセッションが制限時間（実際または仮想）と重なっているかチェック
+            for restrictionSession in allRestrictionSessions {
                 if sessionsOverlap(
                     bubbleStart: bubbleSession.startTime,
                     bubbleEnd: bubbleSession.endTime,
@@ -539,6 +686,103 @@ struct DayStatisticsCard: View {
         }
         
         return count
+    }
+    
+    // 未完了タスクから仮想制限期間を生成（DayStatisticsCard用）
+    private func generateVirtualRestrictionSessions(for date: Date) -> [RestrictionSession] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        var virtualSessions: [RestrictionSession] = []
+        
+        // 対象日のタスクを取得（時刻設定済みのもの）
+        let tasksForDate = taskManager.getParentTasks().filter { task in
+            calendar.isDate(task.dueDate, inSameDayAs: date) && task.hasTime
+        }
+        
+        for task in tasksForDate {
+            let taskTime = task.dueDate
+            
+            // タスク時刻が対象日内にあることを確認
+            guard taskTime >= startOfDay && taskTime < endOfDay else { continue }
+            
+            // 終了時刻を決定
+            let endTime: Date
+            if let completedDate = task.completedDate,
+               completedDate >= taskTime && completedDate < endOfDay {
+                // 対象日内に完了している場合は完了時刻まで
+                endTime = completedDate
+            } else if !task.isCompleted {
+                // 未完了の場合は日の終わりまで（または現在時刻まで）
+                let now = Date()
+                if calendar.isDate(now, inSameDayAs: date) {
+                    endTime = min(now, endOfDay)
+                } else if date < calendar.startOfDay(for: now) {
+                    // 過去の日付なら日の終わりまで
+                    endTime = endOfDay
+                } else {
+                    // 未来の日付ならスキップ
+                    continue
+                }
+            } else {
+                // 別の日に完了している場合は日の終わりまで
+                endTime = endOfDay
+            }
+            
+            // 開始時刻より終了時刻が後の場合のみセッションを作成
+            if endTime > taskTime {
+                let session = RestrictionSession(
+                    startTime: taskTime,
+                    endTime: endTime,
+                    duration: endTime.timeIntervalSince(taskTime),
+                    taskId: task.id.uuidString
+                )
+                virtualSessions.append(session)
+            }
+        }
+        
+        return virtualSessions
+    }
+    
+    // 実際の制限セッションと仮想制限セッションをマージ（DayStatisticsCard用）
+    private func mergeRestrictionSessions(
+        actual: [RestrictionSession],
+        virtual: [RestrictionSession]
+    ) -> [RestrictionSession] {
+        var allSessions = actual + virtual
+        
+        // 開始時刻でソート
+        allSessions.sort { $0.startTime < $1.startTime }
+        
+        // 重複する期間をマージ
+        var merged: [RestrictionSession] = []
+        
+        for session in allSessions {
+            if merged.isEmpty {
+                merged.append(session)
+            } else {
+                let last = merged[merged.count - 1]
+                
+                // 前のセッションと重なっている、または連続している場合はマージ
+                if session.startTime <= last.endTime {
+                    // より遅い終了時刻を採用
+                    let newEndTime = max(last.endTime, session.endTime)
+                    let newSession = RestrictionSession(
+                        startTime: last.startTime,
+                        endTime: newEndTime,
+                        duration: newEndTime.timeIntervalSince(last.startTime),
+                        taskId: last.taskId ?? session.taskId
+                    )
+                    merged[merged.count - 1] = newSession
+                } else {
+                    // 重ならない場合は新規追加
+                    merged.append(session)
+                }
+            }
+        }
+        
+        return merged
     }
     
     private func sessionsOverlap(
