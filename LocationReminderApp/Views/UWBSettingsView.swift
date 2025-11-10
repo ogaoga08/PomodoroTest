@@ -519,6 +519,12 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var repairingDeviceID: Int? = nil  // 再ペアリングが必要なデバイスID（1台のみ）
     private var lastRepairTime: Date = Date.distantPast  // 最後の再ペアリング試行時刻
     
+    // 距離計測開始確認用
+    private var distanceMeasurementCheckTasks: [Int: DispatchWorkItem] = [:]  // デバイス毎の確認タスク
+    private let distanceMeasurementTimeout: TimeInterval = 5.0  // 距離計測開始のタイムアウト（秒）- バックグラウンド対応で短縮
+    private var distanceMeasurementRetryCount: [Int: Int] = [:]  // デバイス毎のリトライ回数
+    private let maxDistanceMeasurementRetries = 5  // 最大リトライ回数（5秒×5回=25秒）
+    
     private override init() {
         super.init()
         
@@ -793,7 +799,15 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private func requestNearbyInteractionPermissionCorrectly() {
         logger.info("🔵 正しい方法でNI許可ダイアログを表示")
         
-        // 許可テスト用セッションを作成
+        // ⚠️ 重要: NISession()は必ずメインスレッドで作成する（Qorvoサンプルコードの仕様）
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async {
+                self.requestNearbyInteractionPermissionCorrectly()
+            }
+            return
+        }
+        
+        // 許可テスト用セッションを作成（メインスレッド）
         permissionTestSession = NISession()
         permissionTestSession?.delegate = self
         
@@ -915,26 +929,27 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             accessoryConfigurations[device.uniqueID] = configuration
             logger.info("📡 設定データ受信・保存: \(device.name)")
             
-            // 既存のNISessionがある場合は無効化（スレッドセーフ）
-            if let existingSession = getNISession(for: device.uniqueID) {
-                existingSession.invalidate()
-                logger.info("既存NISessionを無効化: \(device.name)")
-            }
-            
-            // NISessionを開始（ここで許可ダイアログが表示される）
-            let session = NISession()
-            session.delegate = self
-            setNISession(session, for: device.uniqueID)
-            
-            // 実際のrun()でNI許可ダイアログが表示される
-            session.run(configuration)
-            
-            // UI状態を更新
+            // ⚠️ 重要: NISession()は必ずメインスレッドで作成する（Qorvoサンプルコードの仕様）
             DispatchQueue.main.async {
+                // 既存のNISessionがある場合は無効化（スレッドセーフ）
+                if let existingSession = self.getNISession(for: device.uniqueID) {
+                    existingSession.invalidate()
+                    self.logger.info("既存NISessionを無効化: \(device.name)")
+                }
+                
+                // NISessionを開始（ここで許可ダイアログが表示される）
+                let session = NISession()
+                session.delegate = self
+                self.setNISession(session, for: device.uniqueID)
+                
+                // 実際のrun()でNI許可ダイアログが表示される
+                session.run(configuration)
+                
+                // UI状態を更新
                 self.niPermissionStatus = "許可要求中..."
+                
+                self.logger.info("📱 新しいNISession開始: \(device.name)")
             }
-            
-            logger.info("📱 新しいNISession開始: \(device.name)")
             
         } catch {
             logger.error("設定データ解析失敗: \(error)")
@@ -946,10 +961,26 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         logger.info("🎯 UWB距離測定開始通知受信: \(device.name)")
         logger.info("   - 前回のステータス: \(device.status.rawValue)")
         
+        let deviceID = device.uniqueID
+        
+        // 距離計測開始確認タスクをキャンセル（成功したため）
+        distanceMeasurementCheckTasks[deviceID]?.cancel()
+        distanceMeasurementCheckTasks.removeValue(forKey: deviceID)
+        distanceMeasurementRetryCount.removeValue(forKey: deviceID)
+        
         DispatchQueue.main.async {
             device.status = DeviceStatus.ranging
         }
         updateConnectionStatus()
+        
+        // バックグラウンドの場合は成功通知を送信
+        if isBackgroundMode {
+            sendUWBPairingDebugNotification(
+                title: "📏 距離計測開始",
+                message: "UWB測定が正常に開始されました",
+                deviceName: device.name
+            )
+        }
         
         logger.info("✅ デバイスステータスをrangingに更新")
         logger.info("   👉 次のステップ: session(_:didUpdate:)で距離データ受信待ち")
@@ -1372,7 +1403,9 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
         
         // 即座に再ペアリング試行（固定遅延）
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.0) {
+        // ⚠️ 修正: attemptNISessionRepairは内部でメインスレッドに切り替えるため、
+        // ここではバックグラウンドスレッドからの呼び出しでも安全
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.attemptNISessionRepair(for: device)
         }
     }
@@ -1463,54 +1496,51 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         logger.info("✅ Bluetooth接続確認完了")
         
-        // 既存のNISessionをクリーンアップ（スレッドセーフ）
-        if let existingSession = getNISession(for: deviceID) {
-            logger.info("🗑️ 既存NISession無効化")
-            existingSession.invalidate()
-        }
-        
-        // NISessionの再作成を試行
-        logger.info("🆕 新しいNISession作成")
-        let newSession = NISession()
-        newSession.delegate = self
-        
-        // スレッドセーフに辞書へ保存
-        setNISession(newSession, for: deviceID)
-        
-        // バックグラウンドモードの場合は特別な設定を適用
-        if self.isBackgroundMode {
-            setupSessionForBackgroundMode(newSession)
-        }
-        
-        // ⚠️ 重要: Qorvoサンプルコードに従い、既存の設定を再利用する
-        // 再ペアリング時は、既にペアリング済みなので設定データは保存されている
-        // session.run()を実行すると、didGenerateShareableConfigurationDataが呼ばれ、
-        // configureAndStartメッセージがデバイスに送信される
-        logger.info("▶️ NISession.run()実行（既存設定を使用）")
-        newSession.run(configuration)
-        
-        logger.info("🔄 NISession再開始完了: \(device.name)")
-        logger.info("   👉 次のステップ: session(_:didGenerateShareableConfigurationData:)の呼び出し待ち")
-        
-        // 試行回数をインクリメント - スレッドセーフ
-        if Thread.isMainThread {
-            repairAttempts[deviceID] = currentAttempt + 1
-        } else {
-            DispatchQueue.main.async {
-                self.repairAttempts[deviceID] = currentAttempt + 1
+        // ⚠️ 重要: Qorvoサンプルコードに従い、NISession()は必ずメインスレッドで作成する
+        DispatchQueue.main.async {
+            // 既存のNISessionをクリーンアップ（スレッドセーフ）
+            if let existingSession = self.getNISession(for: deviceID) {
+                self.logger.info("🗑️ 既存NISession無効化")
+                existingSession.invalidate()
             }
-        }
-        
-        // 成功の可能性があるので、少し待ってから結果を確認
-        let verificationDelay: TimeInterval = self.isBackgroundMode ? 5.0 : 3.0
-        
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + verificationDelay) {
-            self.verifyRepairSuccess(for: device)
             
-            // バックグラウンドタスクを終了
-            if repairBackgroundTaskID != .invalid {
-                self.logger.info("🔵 再ペアリング用バックグラウンドタスク終了: \(repairBackgroundTaskID.rawValue)")
-                UIApplication.shared.endBackgroundTask(repairBackgroundTaskID)
+            // NISessionの再作成を試行（メインスレッドで実行）
+            self.logger.info("🆕 新しいNISession作成（メインスレッド）")
+            let newSession = NISession()
+            newSession.delegate = self
+            
+            // スレッドセーフに辞書へ保存
+            self.setNISession(newSession, for: deviceID)
+            
+            // バックグラウンドモードの場合は特別な設定を適用
+            if self.isBackgroundMode {
+                self.setupSessionForBackgroundMode(newSession)
+            }
+            
+            // ⚠️ 重要: Qorvoサンプルコードに従い、既存の設定を再利用する
+            // 再ペアリング時は、既にペアリング済みなので設定データは保存されている
+            // session.run()を実行すると、didGenerateShareableConfigurationDataが呼ばれ、
+            // configureAndStartメッセージがデバイスに送信される
+            self.logger.info("▶️ NISession.run()実行（既存設定を使用）")
+            newSession.run(configuration)
+            
+            self.logger.info("🔄 NISession再開始完了: \(device.name)")
+            self.logger.info("   👉 次のステップ: session(_:didGenerateShareableConfigurationData:)の呼び出し待ち")
+            
+            // 試行回数をインクリメント（メインスレッドで実行中）
+            self.repairAttempts[deviceID] = currentAttempt + 1
+            
+            // 成功の可能性があるので、少し待ってから結果を確認
+            let verificationDelay: TimeInterval = self.isBackgroundMode ? 5.0 : 3.0
+            
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + verificationDelay) {
+                self.verifyRepairSuccess(for: device)
+                
+                // バックグラウンドタスクを終了
+                if repairBackgroundTaskID != .invalid {
+                    self.logger.info("🔵 再ペアリング用バックグラウンドタスク終了: \(repairBackgroundTaskID.rawValue)")
+                    UIApplication.shared.endBackgroundTask(repairBackgroundTaskID)
+                }
             }
         }
     }
@@ -1535,11 +1565,18 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             }
         }
         
+        // 既存の確認タスクをキャンセル
+        distanceMeasurementCheckTasks[deviceID]?.cancel()
+        distanceMeasurementCheckTasks.removeValue(forKey: deviceID)
+        
+        // リトライカウントをリセット
+        distanceMeasurementRetryCount[deviceID] = 0
+        
         // 🔧 重要: Qorvoサンプルコードに従い、initializeメッセージを送信
         // NISessionはrun()されているが、アクセサリに設定データを要求する必要がある
         let initMessage = Data([MessageId.initialize.rawValue])
         sendDataToDevice(initMessage, device: device)
-        logger.info("📤 initializeメッセージ送信完了: \(device.name)")
+        logger.info("📤 initializeメッセージ送信完了 (試行 1/\(self.maxDistanceMeasurementRetries + 1)): \(device.name)")
         
         // デバイス情報は保存しておく
         if accessoryConfigurations[deviceID] != nil {
@@ -1549,6 +1586,96 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         updateConnectionStatus()
         
         logger.info("👉 次のステップ: アクセサリからの設定データ応答待ち")
+        
+        // タイムアウト処理: 一定時間後に距離計測が開始されているか確認
+        scheduleDistanceMeasurementCheck(for: device)
+    }
+    
+    // 距離計測開始確認をスケジュール
+    private func scheduleDistanceMeasurementCheck(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        let checkTask = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.verifyDistanceMeasurementStarted(for: device)
+        }
+        distanceMeasurementCheckTasks[deviceID] = checkTask
+        DispatchQueue.main.asyncAfter(deadline: .now() + distanceMeasurementTimeout, execute: checkTask)
+    }
+    
+    // 距離計測が開始されているか確認し、必要に応じて再試行
+    private func verifyDistanceMeasurementStarted(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // タスクがキャンセルされていたら何もしない
+        guard distanceMeasurementCheckTasks[deviceID] != nil else {
+            return
+        }
+        
+        // タスクをクリア
+        distanceMeasurementCheckTasks.removeValue(forKey: deviceID)
+        
+        let currentRetry = distanceMeasurementRetryCount[deviceID, default: 0]
+        
+        logger.info("🔍 距離計測開始確認 (試行 \(currentRetry + 1)/\(self.maxDistanceMeasurementRetries + 1)): \(device.name)")
+        logger.info("   - デバイスステータス: \(device.status.rawValue)")
+        logger.info("   - 距離データ: \(device.distance != nil ? "有" : "無")")
+        logger.info("   - Bluetooth接続: \(device.peripheral.state == .connected ? "接続" : "未接続")")
+        logger.info("   - NISession: \(self.hasNISession(for: deviceID) ? "有" : "無")")
+        
+        // 距離計測が開始されている（rangingステータスまたは距離データあり）場合は成功
+        if device.status == .ranging || device.distance != nil {
+            logger.info("✅ 距離計測開始成功: \(device.name)")
+            distanceMeasurementRetryCount.removeValue(forKey: deviceID)
+            return
+        }
+        
+        // まだconnectedまたはpairedの状態で、距離データがない場合は再試行
+        if (device.status == .connected || device.status == .paired) && 
+           device.peripheral.state == .connected &&
+           self.hasNISession(for: deviceID) {
+            
+            // 最大リトライ回数に達していない場合は再試行
+            if currentRetry < self.maxDistanceMeasurementRetries {
+                distanceMeasurementRetryCount[deviceID] = currentRetry + 1
+                
+                logger.warning("⚠️ 距離計測が開始されていません - 再試行 \(currentRetry + 2)/\(self.maxDistanceMeasurementRetries + 1): \(device.name)")
+                
+                // バックグラウンドの場合は通知を送信（最初と最後のみ）
+                if isBackgroundMode && (currentRetry == 0 || currentRetry == self.maxDistanceMeasurementRetries - 1) {
+                    sendUWBPairingDebugNotification(
+                        title: "⚠️ 距離計測未開始",
+                        message: "initializeメッセージを再送信します (\(currentRetry + 2)/\(self.maxDistanceMeasurementRetries + 1))",
+                        deviceName: device.name
+                    )
+                }
+                
+                // 再度initializeメッセージを送信
+                let initMessage = Data([MessageId.initialize.rawValue])
+                sendDataToDevice(initMessage, device: device)
+                logger.info("📤 initializeメッセージ再送信: \(device.name)")
+                
+                // 次の確認をスケジュール
+                scheduleDistanceMeasurementCheck(for: device)
+            } else {
+                // 最大リトライ回数に達した
+                logger.error("❌ 距離計測開始失敗（最大リトライ回数到達）: \(device.name)")
+                distanceMeasurementRetryCount.removeValue(forKey: deviceID)
+                
+                if isBackgroundMode {
+                    sendUWBPairingDebugNotification(
+                        title: "❌ 距離計測開始失敗",
+                        message: "バックグラウンドでの開始に失敗しました。アプリを開くと再試行されます。",
+                        deviceName: device.name
+                    )
+                }
+            }
+        } else {
+            logger.error("❌ 距離計測開始条件不足: \(device.name)")
+            logger.error("   - デバイスステータス: \(device.status.rawValue)")
+            logger.error("   - Bluetooth状態: \(device.peripheral.state.rawValue)")
+            logger.error("   - NISession存在: \(self.hasNISession(for: deviceID))")
+            distanceMeasurementRetryCount.removeValue(forKey: deviceID)
+        }
     }
     
     // 距離計測開始の確認とリトライ処理
@@ -1725,12 +1852,12 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         
         // バックグラウンドでのタイマー実行を改善
         if self.isBackgroundMode {
-            // バックグラウンドタスクとして実行
-            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + waitTime) {
+            // バックグラウンドタスクとして実行（メインスレッドで実行）
+            DispatchQueue.main.asyncAfter(deadline: .now() + waitTime) {
                 self.attemptNISessionRepair(for: device)
             }
         } else {
-            // フォアグラウンドでは通常のタイマーを使用
+            // フォアグラウンドでは通常のタイマーを使用（メインスレッドで実行）
             let timer = Timer.scheduledTimer(withTimeInterval: waitTime, repeats: false) { _ in
                 self.attemptNISessionRepair(for: device)
             }
@@ -2086,7 +2213,8 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // フォアグラウンドでより短い間隔でスケジュール（固定遅延）
         let shortDelay: TimeInterval = 1.0
         
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + shortDelay) {
+        // ⚠️ 修正: メインスレッドで実行
+        DispatchQueue.main.asyncAfter(deadline: .now() + shortDelay) {
             self.attemptNISessionRepair(for: device)
         }
         
@@ -2111,6 +2239,8 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         logger.info("   - NISession: \(hasNISession ? "有" : "無")")
         logger.info("   - 設定: \(hasConfiguration ? "有" : "無")")
         logger.info("   - Bluetooth: \(connectedDevice.peripheral.state == .connected ? "接続" : "未接続")")
+        logger.info("   - デバイスステータス: \(connectedDevice.status.rawValue)")
+        logger.info("   - 距離データ: \(connectedDevice.distance != nil ? "有" : "無")")
         logger.info("   - 試行回数: \(currentAttempts)")
         
         // NISessionが不足している場合の復旧処理
@@ -2125,17 +2255,27 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
             
             logger.info("🔄 フォアグラウンド復帰時修復開始: \(connectedDevice.name)")
             
-            // 固定遅延で復旧処理を実行
+            // 固定遅延で復旧処理を実行（メインスレッドで実行）
             let delay: TimeInterval = 2.0
-            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + delay) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 self.attemptNISessionRepair(for: connectedDevice)
             }
         } else if connectedDevice.status == .ranging && connectedDevice.distance == nil {
             // 距離データが長期間更新されていない場合
             logger.info("🔄 距離データ未更新のため修復: \(connectedDevice.name)")
             let delay: TimeInterval = 3.0
-            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + delay) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 self.attemptNISessionRepair(for: connectedDevice)
+            }
+        } else if hasNISession && hasConfiguration && connectedDevice.peripheral.state == .connected && 
+                  (connectedDevice.status == .connected || connectedDevice.status == .paired) && 
+                  connectedDevice.distance == nil {
+            // 🔧 新規追加: バックグラウンドで再ペアリング成功したが、距離計測が開始されていない場合
+            logger.info("🔄 再ペアリング済みだが距離計測未開始のため再初期化: \(connectedDevice.name)")
+            let delay: TimeInterval = 2.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                // 再度initializeメッセージを送信して距離計測を開始
+                self.ensureDistanceMeasurementStarted(for: connectedDevice)
             }
         } else {
             logger.info("✅ フォアグラウンド復帰: 修復不要")
@@ -2210,6 +2350,9 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                 // NISessionの状態確認と再ペアリング判定
                 checkAndRepairNISessionIfNeeded(for: connectedDevice)
                 
+                // 🔧 新規追加: 距離計測が開始されているか確認
+                checkAndEnsureDistanceMeasurementStarted(for: connectedDevice)
+                
                 // NIセッションの有効性を確認
                 let hasActiveNISession = self.hasNISession(for: connectedDevice.uniqueID)
                 logger.info("📡 NIセッション: \(hasActiveNISession ? "有効" : "無効") | Bubble: \(self.isInSecureBubble ? "内部" : "外部")")
@@ -2220,6 +2363,35 @@ class UWBManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         processBackgroundRepair()
         
         lastBackgroundUpdate = Date()
+    }
+    
+    // 距離計測が開始されているか確認し、必要に応じて初期化
+    private func checkAndEnsureDistanceMeasurementStarted(for device: UWBDevice) {
+        let deviceID = device.uniqueID
+        
+        // NISessionがあり、Bluetooth接続されているが、距離計測が開始されていない場合
+        let hasNISession = self.hasNISession(for: deviceID)
+        let hasConfiguration = accessoryConfigurations[deviceID] != nil
+        let isConnectedStatus = device.status == .connected || device.status == .paired
+        let noDistance = device.distance == nil
+        let bluetoothConnected = device.peripheral.state == .connected
+        
+        // 既にリトライ中の場合はスキップ
+        if distanceMeasurementCheckTasks[deviceID] != nil {
+            return
+        }
+        
+        // 条件を満たす場合のみ確認
+        if hasNISession && hasConfiguration && isConnectedStatus && noDistance && bluetoothConnected {
+            logger.info("🔍 距離計測未開始を検出 (バックグラウンドハートビート): \(device.name)")
+            logger.info("   - NISession: 有")
+            logger.info("   - 設定: 有")
+            logger.info("   - ステータス: \(device.status.rawValue)")
+            logger.info("   - 距離データ: 無")
+            
+            // initializeメッセージを送信して距離計測を開始
+            ensureDistanceMeasurementStarted(for: device)
+        }
     }
     
     private func checkAndRepairNISessionIfNeeded(for device: UWBDevice) {
@@ -2991,6 +3163,25 @@ extension UWBManager: CBPeripheralDelegate {
             }
         }
     }
+    
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard let device = findDevice(peripheral: peripheral) else { return }
+        
+        if let error = error {
+            logger.error("❌ データ送信エラー (\(device.name)): \(error.localizedDescription)")
+            
+            // バックグラウンドの場合はエラー通知を送信
+            if isBackgroundMode {
+                sendUWBPairingDebugNotification(
+                    title: "❌ 通信エラー",
+                    message: "データ送信に失敗しました",
+                    deviceName: device.name
+                )
+            }
+        } else {
+            logger.info("✅ データ送信成功 (\(device.name)): characteristic \(characteristic.uuid)")
+        }
+    }
 }
 
 // MARK: - NISessionDelegate
@@ -3050,9 +3241,9 @@ extension UWBManager: NISessionDelegate {
             logger.info("🔄 セッション再開 - 自動リトライ: \(device.name)")
             
             // サスペンド終了時は自動的に再ペアリングを試行（Qorvoサンプルコードのパターン）
-            // Bluetoothが接続状態であれば、少し待ってから再ペアリング
+            // Bluetoothが接続状態であれば、少し待ってから再ペアリング（メインスレッドで実行）
             if device.peripheral.state == .connected {
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     self.attemptNISessionRepair(for: device)
                 }
             } else {
@@ -3181,6 +3372,21 @@ extension UWBManager: NISessionDelegate {
         let isFirstDistance = device.distance == nil
         if isFirstDistance {
             logger.info("🎯 初回距離データ取得成功: \(device.name) - \(String(format: "%.2f", distance))m")
+            
+            // 距離計測開始確認タスクをキャンセル（成功したため）
+            let deviceID = device.uniqueID
+            distanceMeasurementCheckTasks[deviceID]?.cancel()
+            distanceMeasurementCheckTasks.removeValue(forKey: deviceID)
+            distanceMeasurementRetryCount.removeValue(forKey: deviceID)
+            
+            // バックグラウンドの場合は成功通知を送信
+            if isBackgroundMode {
+                sendUWBPairingDebugNotification(
+                    title: "📏 距離データ取得",
+                    message: "初回距離: \(String(format: "%.2f", distance))m",
+                    deviceName: device.name
+                )
+            }
         }
         
         DispatchQueue.main.async {
@@ -3260,8 +3466,8 @@ extension UWBManager: NISessionDelegate {
                 // バックグラウンドではハートビートが処理する
                 logger.info("🌙 バックグラウンド: ハートビートで処理")
             } else {
-                // フォアグラウンドでは即座に再ペアリング
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+                // フォアグラウンドでは即座に再ペアリング（メインスレッドで実行）
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     self.attemptNISessionRepair(for: device)
                 }
             }
