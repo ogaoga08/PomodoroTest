@@ -409,6 +409,7 @@ struct ContentView: View {
             uwbManager.screenTimeManager = screenTimeManager
             screenTimeManager.taskManager = taskManager
             screenTimeManager.uwbManager = uwbManager
+            taskManager.screenTimeManager = screenTimeManager // TaskManagerにScreenTimeManagerの参照を追加
             
             // NotificationManagerにScreenTimeManagerの参照を設定
             notificationManager.screenTimeManager = screenTimeManager
