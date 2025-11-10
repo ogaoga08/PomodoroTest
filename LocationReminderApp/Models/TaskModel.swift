@@ -478,6 +478,9 @@ class EventKitTaskManager: ObservableObject {
     private let eventStore = EKEventStore()
     private var reminderCalendar: EKCalendar?
     
+    // ScreenTimeManagerへの参照を追加
+    weak var screenTimeManager: AnyObject?
+    
     // UserDefaultsのキー
     private let selectedListIdentifierKey = "SelectedReminderListIdentifier"
     private let hasSelectedListKey = "HasSelectedReminderList"
@@ -524,7 +527,44 @@ class EventKitTaskManager: ObservableObject {
         DispatchQueue.main.async {
             print("EventKitの変更を検知しました - リマインダーを再読み込みします")
             self.loadReminders()
+            
+            // リマインダー再読み込み後、ScreenTime制限条件を再評価
+            // 0.5秒の遅延を入れてloadRemindersの完了を待つ
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.evaluateScreenTimeRestrictionAfterReload()
+            }
         }
+    }
+    
+    // ScreenTime制限条件を再評価（EventKit変更後）
+    private func evaluateScreenTimeRestrictionAfterReload() {
+        // ScreenTimeManagerへの型安全な参照を取得
+        guard let manager = screenTimeManager else {
+            print("⚠️ ScreenTimeManagerの参照が設定されていません")
+            return
+        }
+        
+        // 型チェック（実行時に型が一致することを確認）
+        guard let screenTimeManager = manager as? ScreenTimeManager else {
+            print("⚠️ screenTimeManagerの型が不正です")
+            return
+        }
+        
+        // ScreenTimeManagerが認証されている場合のみ処理
+        guard screenTimeManager.isAuthorized else {
+            print("ℹ️ ScreenTimeManagerが未認証のため、制限条件の再評価をスキップします")
+            return
+        }
+        
+        print("📋 EventKit変更後: ScreenTime制限条件を再評価します")
+        
+        // タスクの更新を処理（タスク追加/更新/削除時の制限チェック）
+        screenTimeManager.handleTaskUpdate()
+        
+        // タスクの完了状態も確認（すべて完了している場合は制限解除）
+        screenTimeManager.handleTaskCompletion()
+        
+        print("✅ ScreenTime制限条件の再評価が完了しました")
     }
     
     // 手動更新メソッド
