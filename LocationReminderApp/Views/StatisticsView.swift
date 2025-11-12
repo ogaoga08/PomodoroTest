@@ -55,23 +55,226 @@ struct StatisticsView: View {
     @State private var showShareSheet = false
     @State private var csvText = ""
     @State private var showCopiedAlert = false
+    @State private var selectedStartDate: Date?
+    @State private var selectedTab = 0 // 0: 日ごと, 1: 週ごと
     
-    // 今日から過去13日分（計14日分）
+    // 統計データの開始日を取得または設定
+    private var statisticsStartDate: Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // 完了タスクから最も古い日付を取得
+        let oldestCompletedDate = taskManager.completedTasks
+            .compactMap { $0.completedDate }
+            .min()
+        
+        // スナップショットデータから最も古い日付を取得
+        let oldestSnapshotDate = getOldestSnapshotDate()
+        
+        // 完了タスクとスナップショットの中で最も古い日付を使用
+        let candidates = [oldestCompletedDate, oldestSnapshotDate].compactMap { $0 }
+        
+        if let oldestDate = candidates.min() {
+            return calendar.startOfDay(for: oldestDate)
+        } else {
+            // データが何もない場合は今日を返す
+            return today
+        }
+    }
+    
+    // スナップショットから最も古い日付を取得
+    private func getOldestSnapshotDate() -> Date? {
+        let key = "daily_stats_snapshots"
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let snapshots = try? JSONDecoder().decode([DailyStatsSnapshot].self, from: data) else {
+            return nil
+        }
+        return snapshots.map { $0.date }.min()
+    }
+    
+    // デフォルトの表示開始日を計算
+    private var defaultDisplayStartDate: Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let appStartDate = statisticsStartDate
+        
+        // アプリ開始日から今日までの日数
+        let daysSinceStart = calendar.dateComponents([.day], from: appStartDate, to: today).day!
+        
+        if daysSinceStart >= 13 {
+            // 14日以上経過している場合は、最新の2週間（今日から13日前）
+            return calendar.date(byAdding: .day, value: -13, to: today)!
+        } else {
+            // 14日未満の場合は、アプリ利用開始日から
+            return appStartDate
+        }
+    }
+    
+    // 表示する日付の配列を計算
     private var weekDates: [Date] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        return (0..<14).compactMap { offset in
-            calendar.date(byAdding: .day, value: -offset, to: today)
-        }.reversed()
+        let baseStartDate = selectedStartDate ?? defaultDisplayStartDate
+        
+        // 選択された開始日から2週間後の日付
+        let twoWeeksLater = calendar.date(byAdding: .day, value: 13, to: baseStartDate)!
+        
+        // 表示終了日は「開始日+13日」と「今日」のうち早い方
+        let endDate = min(twoWeeksLater, today)
+        
+        // 開始日から終了日までの日数
+        let dayCount = calendar.dateComponents([.day], from: baseStartDate, to: endDate).day! + 1
+        
+        // 開始日から昇順で日付を生成
+        return (0..<dayCount).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: baseStartDate)
+        }
+    }
+    
+    // 選択可能な開始日の範囲（統計開始日から今日まで）
+    private var availableStartDates: [Date] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startDate = statisticsStartDate
+        
+        // 統計開始日から今日までの日数
+        let dayCount = calendar.dateComponents([.day], from: startDate, to: today).day! + 1
+        
+        // 統計開始日から今日まで、全ての日付を選択可能にする
+        return (0..<dayCount).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: startDate)
+        }
+    }
+    
+    // 週ごとの統計データを計算
+    private var weeklyStatistics: [WeeklyStatistics] {
+        let baseStartDate = selectedStartDate ?? defaultDisplayStartDate
+        let calendar = Calendar.current
+        var result: [WeeklyStatistics] = []
+        
+        // 第1週（開始日から7日間）
+        let week1Dates = (0..<7).compactMap { offset -> Date? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: baseStartDate),
+                  weekDates.contains(date) else {
+                return nil
+            }
+            return date
+        }
+        
+        if !week1Dates.isEmpty {
+            let week1Stats = week1Dates.map { getDailyStatistics(for: $0) }
+            result.append(calculateWeeklyStats(
+                weekNumber: 1,
+                startDate: week1Dates.first!,
+                endDate: week1Dates.last!,
+                dailyStats: week1Stats
+            ))
+        }
+        
+        // 第2週（8日目から14日間）
+        let week2Dates = (7..<14).compactMap { offset -> Date? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: baseStartDate),
+                  weekDates.contains(date) else {
+                return nil
+            }
+            return date
+        }
+        
+        if !week2Dates.isEmpty {
+            let week2Stats = week2Dates.map { getDailyStatistics(for: $0) }
+            result.append(calculateWeeklyStats(
+                weekNumber: 2,
+                startDate: week2Dates.first!,
+                endDate: week2Dates.last!,
+                dailyStats: week2Stats
+            ))
+        }
+        
+        return result
+    }
+    
+    // 週ごとの平均を計算
+    private func calculateWeeklyStats(
+        weekNumber: Int,
+        startDate: Date,
+        endDate: Date,
+        dailyStats: [DailyStatistics]
+    ) -> WeeklyStatistics {
+        let dayCount = Double(dailyStats.count)
+        
+        // 完了タスク数の平均
+        let totalCompleted = dailyStats.reduce(0) { $0 + $1.completedCount }
+        let avgCompletedCount = dayCount > 0 ? Double(totalCompleted) / dayCount : 0
+        
+        // 制限時間の平均
+        let totalRestriction = dailyStats.reduce(0.0) { $0 + $1.totalRestrictionTime }
+        let avgRestrictionTime = dayCount > 0 ? totalRestriction / dayCount : 0
+        
+        // 入退室回数の平均
+        let totalBubbleOutside = dailyStats.reduce(0) { $0 + $1.bubbleOutsideCount }
+        let avgBubbleOutsideCount = dayCount > 0 ? Double(totalBubbleOutside) / dayCount : 0
+        
+        // 平均集中度の計算
+        let allConcentrationLevels = dailyStats.flatMap { stat in
+            stat.completedTasks.compactMap { $0.concentrationLevel }
+        }
+        let avgConcentration: Double? = !allConcentrationLevels.isEmpty
+            ? Double(allConcentrationLevels.reduce(0, +)) / Double(allConcentrationLevels.count)
+            : nil
+        
+        return WeeklyStatistics(
+            weekNumber: weekNumber,
+            startDate: startDate,
+            endDate: endDate,
+            avgCompletedCount: avgCompletedCount,
+            avgRestrictionTime: avgRestrictionTime,
+            avgBubbleOutsideCount: avgBubbleOutsideCount,
+            avgConcentration: avgConcentration,
+            dailyStats: dailyStats
+        )
     }
     
     var body: some View {
         NavigationView {
-            ScrollView {
+            VStack(spacing: 0) {
+                // 共通ヘッダー：開始日選択とCSVボタン
                 VStack(spacing: 12) {
-                    // CSVエクスポートボタン（横並び）
+                    // 開始日選択セクション
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("表示期間")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            
+                            Picker("開始日", selection: Binding(
+                                get: { selectedStartDate ?? defaultDisplayStartDate },
+                                set: { selectedStartDate = $0 }
+                            )) {
+                                // 昇順で表示（古い→新しい）
+                                ForEach(availableStartDates, id: \.self) { date in
+                                    Text(formatPickerDate(date))
+                                        .tag(date)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .font(.subheadline)
+                        }
+                        .padding(.horizontal)
+                        
+                        // 選択された期間を表示
+                        HStack {
+                            Text(formatSelectedPeriod())
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.top, 8)
+                    
+                    // CSVエクスポートボタン
                     HStack(spacing: 8) {
-                        // クリップボードにコピー
                         Button(action: {
                             csvText = generateCSV()
                             UIPasteboard.general.string = csvText
@@ -89,21 +292,49 @@ struct StatisticsView: View {
                             .foregroundColor(.white)
                             .cornerRadius(8)
                         }
-                        
-                        
                     }
                     .padding(.horizontal)
-                    .padding(.top, 8)
-                    
-                    // 1週間分の統計
-                    ForEach(weekDates, id: \.self) { date in
-                        DayStatisticsCard(
-                            date: date,
-                            taskManager: taskManager
-                        )
-                    }
+                    .padding(.top, 4)
                 }
-                .padding(.bottom, 20)
+                .background(Color(.systemBackground))
+                
+                // タブ表示
+                Picker("表示形式", selection: $selectedTab) {
+                    Text("日ごと").tag(0)
+                    Text("週ごと").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                
+                // コンテンツ
+                TabView(selection: $selectedTab) {
+                    // 日ごとタブ
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(weekDates, id: \.self) { date in
+                                DayStatisticsCard(
+                                    date: date,
+                                    taskManager: taskManager
+                                )
+                            }
+                        }
+                        .padding(.bottom, 20)
+                    }
+                    .tag(0)
+                    
+                    // 週ごとタブ
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(weeklyStatistics) { weekStat in
+                                WeekStatisticsCard(weekStats: weekStat)
+                            }
+                        }
+                        .padding(.bottom, 20)
+                    }
+                    .tag(1)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .navigationTitle("週間統計")
             .navigationBarTitleDisplayMode(.inline)
@@ -122,14 +353,65 @@ struct StatisticsView: View {
         }
     }
     
-    // CSV生成（1週間分）
+    // 日付フォーマット用のヘルパー
+    private var calendar: Calendar {
+        Calendar.current
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年M月d日(E)"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter.string(from: date)
+    }
+    
+    private func formatPickerDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日(E)"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter.string(from: date)
+    }
+    
+    private func formatSelectedPeriod() -> String {
+        let start = selectedStartDate ?? defaultDisplayStartDate
+        let end = weekDates.last ?? start
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        formatter.locale = Locale(identifier: "ja_JP")
+        
+        return "\(formatter.string(from: start)) 〜 \(formatter.string(from: end))"
+    }
+    
+    // CSV生成（週ごと平均→日ごとデータ→完了タスクデータ）
     private func generateCSV() -> String {
-        var csv = "日付,完了タスク数,アプリ制限時間(分),入退室回数,平均集中度合い\n"
+        var csv = ""
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy/MM/dd"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
         
         print("📊 CSV生成開始")
+        
+        // 1. 週ごと平均データ
+        csv += "週ごと平均データ\n"
+        csv += "週,期間,平均完了タスク数,平均制限時間(分),平均入退室回数,平均集中度合い\n"
+        
+        for weekStat in weeklyStatistics {
+            let startDate = dateFormatter.string(from: weekStat.startDate)
+            let endDate = dateFormatter.string(from: weekStat.endDate)
+            let avgRestrictionMinutes = Int(weekStat.avgRestrictionTime / 60)
+            let avgConcentrationString = weekStat.avgConcentration.map { String(format: "%.1f", $0) } ?? ""
+            
+            csv += "第\(weekStat.weekNumber)週,\(startDate)〜\(endDate),\(String(format: "%.1f", weekStat.avgCompletedCount)),\(avgRestrictionMinutes),\(String(format: "%.1f", weekStat.avgBubbleOutsideCount)),\(avgConcentrationString)\n"
+            print("📊 第\(weekStat.weekNumber)週: 平均完了\(String(format: "%.1f", weekStat.avgCompletedCount))件, 平均制限\(avgRestrictionMinutes)分")
+        }
+        
+        // 2. 日ごとデータ
+        csv += "\n日ごとデータ\n"
+        csv += "日付,完了タスク数,アプリ制限時間(分),入退室回数,平均集中度合い\n"
+        
         print("📊 週間日付数: \(weekDates.count)")
         
         for date in weekDates {
@@ -149,14 +431,12 @@ struct StatisticsView: View {
             }
             
             csv += "\(dateString),\(stats.completedCount),\(restrictionMinutes),\(stats.bubbleOutsideCount),\(avgConcentration)\n"
-            print("📊 \(dateString): タスク\(stats.completedTasks.count)件, 制限\(restrictionMinutes)分, 入退室\(stats.bubbleOutsideCount)回, 平均集中度\(avgConcentration)")
+            print("📊 \(dateString): タスク\(stats.completedCount)件, 制限\(restrictionMinutes)分, 入退室\(stats.bubbleOutsideCount)回")
         }
         
-        csv += "\n完了したタスク\n"
+        // 3. 完了したタスクごとデータ
+        csv += "\n完了したタスクごとデータ\n"
         csv += "日付,タスク名,通知時刻,完了時刻,集中度合い\n"
-        
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm"
         
         var taskCount = 0
         for date in weekDates {
@@ -174,7 +454,6 @@ struct StatisticsView: View {
         
         print("📊 完了タスク総数: \(taskCount)件")
         print("📊 CSV文字数: \(csv.count)")
-        print("📊 CSV内容:\n\(csv)")
         
         return csv
     }
@@ -185,7 +464,7 @@ struct StatisticsView: View {
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         
-        // 完了したタスクを取得
+        // 完了したタスクを取得（完了日ベース）
         let completedTasks = taskManager.completedTasks.compactMap { task -> CompletedTaskInfo? in
             guard let completedDate = task.completedDate,
                   completedDate >= startOfDay && completedDate < endOfDay else {
@@ -213,10 +492,14 @@ struct StatisticsView: View {
             restrictionSessions: restrictionSessions
         )
         
-        // 完了数は日跨ぎ後はスナップショットを優先
+        // 完了数の決定（実際の数とスナップショットの大きい方を使用）
         let today = calendar.startOfDay(for: Date())
+        let actualCount = completedTasks.count
         let snapshotCount = DailyStatsSnapshotHelper.loadCompletedCount(for: date)
-        let completedCount = date < today ? (snapshotCount ?? completedTasks.count) : completedTasks.count
+        
+        // 過去の日付：スナップショットと実際の数を比較して大きい方を使用
+        // （タスク削除の場合はスナップショット、追加完了の場合は実際の数）
+        let completedCount = date < today ? max(snapshotCount ?? 0, actualCount) : actualCount
 
         return DailyStatistics(
             date: date,
@@ -449,6 +732,97 @@ struct StatisticsView: View {
     }
 }
 
+// 週別統計カード
+struct WeekStatisticsCard: View {
+    let weekStats: WeeklyStatistics
+    
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // ヘッダー
+            VStack(spacing: 8) {
+                HStack {
+                    Text("第\(weekStats.weekNumber)週")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("\(dateFormatter.string(from: weekStats.startDate)) 〜 \(dateFormatter.string(from: weekStats.endDate))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                // 平均値サマリー
+                HStack(spacing: 8) {
+                    StatBadge(
+                        icon: "checkmark.circle.fill",
+                        value: String(format: "%.1f", weekStats.avgCompletedCount),
+                        color: .green,
+                        description: "平均完了"
+                    )
+                    
+                    StatBadge(
+                        icon: "hourglass",
+                        value: formatMinutes(weekStats.avgRestrictionTime),
+                        color: .blue,
+                        description: "平均制限"
+                    )
+                    
+                    StatBadge(
+                        icon: "location.slash.fill",
+                        value: String(format: "%.1f", weekStats.avgBubbleOutsideCount),
+                        color: .orange,
+                        description: "平均入退室"
+                    )
+                    
+                    if let avgConcentration = weekStats.avgConcentration {
+                        StatBadge(
+                            icon: "brain.head.profile",
+                            value: String(format: "%.1f", avgConcentration),
+                            color: concentrationColorForAverage(avgConcentration),
+                            description: "平均集中度"
+                        )
+                    }
+                    
+                    Spacer()
+                }
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(.horizontal)
+    }
+    
+    private func formatMinutes(_ timeInterval: TimeInterval) -> String {
+        let minutes = Int(timeInterval / 60)
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let remainingMinutes = minutes % 60
+            if remainingMinutes == 0 {
+                return "\(hours)h"
+            }
+            return "\(hours)h\(remainingMinutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func concentrationColorForAverage(_ avg: Double) -> Color {
+        if avg >= 4.5 { return .green }
+        else if avg >= 3.5 { return .blue }
+        else if avg >= 2.5 { return .gray }
+        else if avg >= 1.5 { return .orange }
+        else { return .red }
+    }
+}
+
 // 日別統計カード（コンパクト版）
 struct DayStatisticsCard: View {
     let date: Date
@@ -609,6 +983,7 @@ struct DayStatisticsCard: View {
         let startOfDay = calendar.startOfDay(for: date)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         
+        // 完了したタスクを取得（完了日ベース）
         let completedTasks = taskManager.completedTasks.compactMap { task -> CompletedTaskInfo? in
             guard let completedDate = task.completedDate,
                   completedDate >= startOfDay && completedDate < endOfDay else {
@@ -634,10 +1009,14 @@ struct DayStatisticsCard: View {
             restrictionSessions: restrictionSessions
         )
         
-        // 完了数（過去日はスナップショット優先）
+        // 完了数の決定（実際の数とスナップショットの大きい方を使用）
         let today = calendar.startOfDay(for: Date())
+        let actualCount = completedTasks.count
         let snapshotCount = DailyStatsSnapshotHelper.loadCompletedCount(for: date)
-        let completedCount = date < today ? (snapshotCount ?? completedTasks.count) : completedTasks.count
+        
+        // 過去の日付：スナップショットと実際の数を比較して大きい方を使用
+        // （タスク削除の場合はスナップショット、追加完了の場合は実際の数）
+        let completedCount = date < today ? max(snapshotCount ?? 0, actualCount) : actualCount
 
         return DailyStatistics(
             date: date,
@@ -922,6 +1301,19 @@ struct DailyStatistics {
     let completedCount: Int
     let totalRestrictionTime: TimeInterval
     let bubbleOutsideCount: Int
+}
+
+// 週別統計データ構造
+struct WeeklyStatistics: Identifiable {
+    let id = UUID()
+    let weekNumber: Int // 1 or 2
+    let startDate: Date
+    let endDate: Date
+    let avgCompletedCount: Double
+    let avgRestrictionTime: TimeInterval
+    let avgBubbleOutsideCount: Double
+    let avgConcentration: Double?
+    let dailyStats: [DailyStatistics]
 }
 
 struct CompletedTaskInfo: Identifiable {
