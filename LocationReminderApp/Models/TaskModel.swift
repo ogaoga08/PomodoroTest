@@ -485,10 +485,15 @@ class EventKitTaskManager: ObservableObject {
     private let selectedListIdentifierKey = "SelectedReminderListIdentifier"
     private let hasSelectedListKey = "HasSelectedReminderList"
     private let hasCreatedInitialTasksKey = "HasCreatedInitialTasks"
+    private let lastSnapshotDateKey = "LastSnapshotDate"
     
     init() {
         checkAuthorizationStatus()
         setupEventStoreNotifications()
+        setupDateChangeNotifications()
+        
+        // 起動時に日付変更をチェック
+        checkDateChange()
     }
     
     deinit {
@@ -520,6 +525,74 @@ class EventKitTaskManager: ObservableObject {
             name: .EKEventStoreChanged,
             object: eventStore
         )
+    }
+    
+    // 日付変更の通知を設定
+    private func setupDateChangeNotifications() {
+        // アプリがフォアグラウンドに戻ったときに日付変更をチェック
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkDateChange),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+        
+        // 重要な時刻変更（日付変更、夏時間など）を検知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkDateChange),
+            name: UIApplication.significantTimeChangeNotification,
+            object: nil
+        )
+        
+        print("📅 日付変更監視を開始しました")
+    }
+    
+    // 日付変更をチェック
+    @objc private func checkDateChange() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // 最後にスナップショットを保存した日付を取得
+        let lastSnapshotDate: Date?
+        if let savedDate = UserDefaults.standard.object(forKey: lastSnapshotDateKey) as? Date {
+            lastSnapshotDate = calendar.startOfDay(for: savedDate)
+        } else {
+            lastSnapshotDate = nil
+        }
+        
+        // 日付が変わっていればスナップショットを保存
+        if lastSnapshotDate == nil || lastSnapshotDate! < today {
+            print("📅 日付変更を検知: \(lastSnapshotDate?.description ?? "初回") → \(today)")
+            savePreviousDaySnapshot(today: today)
+            
+            // 最後にスナップショットを保存した日付を更新
+            UserDefaults.standard.set(today, forKey: lastSnapshotDateKey)
+        }
+    }
+    
+    // 前日までのスナップショットを保存
+    private func savePreviousDaySnapshot(today: Date) {
+        let calendar = Calendar.current
+        
+        // 昨日の日付を取得
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else { return }
+        
+        // 昨日完了したタスクの数を取得（完了日ベース）
+        let yesterdayStartOfDay = calendar.startOfDay(for: yesterday)
+        let yesterdayEndOfDay = calendar.date(byAdding: .day, value: 1, to: yesterdayStartOfDay)!
+        
+        let yesterdayCompletedCount = completedTasks.filter { task in
+            guard let completedDate = task.completedDate else { return false }
+            return completedDate >= yesterdayStartOfDay && completedDate < yesterdayEndOfDay
+        }.count
+        
+        // スナップショットを保存
+        TaskSnapshotHelper.upsertSnapshot(for: yesterday, completedCount: yesterdayCompletedCount)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy/MM/dd"
+        print("📸 前日スナップショット保存: \(dateFormatter.string(from: yesterday)) - \(yesterdayCompletedCount)件")
     }
     
     // EventKitの変更を検知した時の処理
@@ -1667,7 +1740,7 @@ class EventKitTaskManager: ObservableObject {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         
-        // 今日完了したタスクの数を取得
+        // 今日完了したタスクの数を取得（完了日ベース）
         let todayCompletedCount = completedTasks.filter { task in
             guard let completedDate = task.completedDate else { return false }
             return calendar.isDate(completedDate, inSameDayAs: today)
@@ -1675,6 +1748,9 @@ class EventKitTaskManager: ObservableObject {
         
         // スナップショットを更新（今日のみ）
         TaskSnapshotHelper.upsertSnapshot(for: today, completedCount: todayCompletedCount)
+        
+        // 最後にスナップショットを保存した日付を更新
+        UserDefaults.standard.set(today, forKey: lastSnapshotDateKey)
         
         print("📸 今日のスナップショット更新: \(todayCompletedCount)件")
     }
