@@ -222,6 +222,16 @@ struct StatisticsView: View {
             ? Double(allConcentrationLevels.reduce(0, +)) / Double(allConcentrationLevels.count)
             : nil
         
+        // タスク遂行時間差の平均を計算
+        let allTimeDifferences = dailyStats.flatMap { stat in
+            stat.completedTasks.map { task in
+                task.completedDate.timeIntervalSince(task.dueDate)
+            }
+        }
+        let avgCompletionTimeDifference: TimeInterval? = !allTimeDifferences.isEmpty
+            ? allTimeDifferences.reduce(0, +) / Double(allTimeDifferences.count)
+            : nil
+        
         return WeeklyStatistics(
             weekNumber: weekNumber,
             startDate: startDate,
@@ -230,6 +240,7 @@ struct StatisticsView: View {
             avgRestrictionTime: avgRestrictionTime,
             avgBubbleOutsideCount: avgBubbleOutsideCount,
             avgConcentration: avgConcentration,
+            avgCompletionTimeDifference: avgCompletionTimeDifference,
             dailyStats: dailyStats
         )
     }
@@ -396,15 +407,18 @@ struct StatisticsView: View {
         
         // 1. 週ごと平均データ
         csv += "週ごと平均データ\n"
-        csv += "週,期間,平均完了タスク数,平均制限時間(分),平均入退室回数,平均集中度合い\n"
+        csv += "週,期間,平均完了タスク数,平均制限時間(分),平均入退室回数,平均集中度合い,平均遂行時間差(分)\n"
         
         for weekStat in weeklyStatistics {
             let startDate = dateFormatter.string(from: weekStat.startDate)
             let endDate = dateFormatter.string(from: weekStat.endDate)
             let avgRestrictionMinutes = Int(weekStat.avgRestrictionTime / 60)
             let avgConcentrationString = weekStat.avgConcentration.map { String(format: "%.1f", $0) } ?? ""
+            let avgTimeDiffString = weekStat.avgCompletionTimeDifference.map { 
+                String(format: "%.1f", $0 / 60) 
+            } ?? ""
             
-            csv += "第\(weekStat.weekNumber)週,\(startDate)〜\(endDate),\(String(format: "%.1f", weekStat.avgCompletedCount)),\(avgRestrictionMinutes),\(String(format: "%.1f", weekStat.avgBubbleOutsideCount)),\(avgConcentrationString)\n"
+            csv += "第\(weekStat.weekNumber)週,\(startDate)〜\(endDate),\(String(format: "%.1f", weekStat.avgCompletedCount)),\(avgRestrictionMinutes),\(String(format: "%.1f", weekStat.avgBubbleOutsideCount)),\(avgConcentrationString),\(avgTimeDiffString)\n"
             print("📊 第\(weekStat.weekNumber)週: 平均完了\(String(format: "%.1f", weekStat.avgCompletedCount))件, 平均制限\(avgRestrictionMinutes)分")
         }
         
@@ -758,38 +772,53 @@ struct WeekStatisticsCard: View {
                 }
                 
                 // 平均値サマリー
-                HStack(spacing: 8) {
-                    StatBadge(
-                        icon: "checkmark.circle.fill",
-                        value: String(format: "%.1f", weekStats.avgCompletedCount),
-                        color: .green,
-                        description: "平均完了"
-                    )
-                    
-                    StatBadge(
-                        icon: "hourglass",
-                        value: formatMinutes(weekStats.avgRestrictionTime),
-                        color: .blue,
-                        description: "平均制限"
-                    )
-                    
-                    StatBadge(
-                        icon: "location.slash.fill",
-                        value: String(format: "%.1f", weekStats.avgBubbleOutsideCount),
-                        color: .orange,
-                        description: "平均入退室"
-                    )
-                    
-                    if let avgConcentration = weekStats.avgConcentration {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
                         StatBadge(
-                            icon: "brain.head.profile",
-                            value: String(format: "%.1f", avgConcentration),
-                            color: concentrationColorForAverage(avgConcentration),
-                            description: "平均集中度"
+                            icon: "checkmark.circle.fill",
+                            value: String(format: "%.1f", weekStats.avgCompletedCount),
+                            color: .green,
+                            description: "平均完了"
                         )
+                        
+                        StatBadge(
+                            icon: "hourglass",
+                            value: formatMinutes(weekStats.avgRestrictionTime),
+                            color: .blue,
+                            description: "平均制限"
+                        )
+                        
+                        StatBadge(
+                            icon: "location.slash.fill",
+                            value: String(format: "%.1f", weekStats.avgBubbleOutsideCount),
+                            color: .orange,
+                            description: "平均入退室"
+                        )
+                        
+                        Spacer()
                     }
                     
-                    Spacer()
+                    HStack(spacing: 8) {
+                        if let avgConcentration = weekStats.avgConcentration {
+                            StatBadge(
+                                icon: "brain.head.profile",
+                                value: String(format: "%.1f", avgConcentration),
+                                color: concentrationColorForAverage(avgConcentration),
+                                description: "平均集中度"
+                            )
+                        }
+                        
+                        if let avgTimeDiff = weekStats.avgCompletionTimeDifference {
+                            StatBadge(
+                                icon: "clock.arrow.circlepath",
+                                value: formatTimeDifference(avgTimeDiff),
+                                color: timeDifferenceColor(avgTimeDiff),
+                                description: "平均遂行時間差"
+                            )
+                        }
+                        
+                        Spacer()
+                    }
                 }
             }
             .padding()
@@ -820,6 +849,32 @@ struct WeekStatisticsCard: View {
         else if avg >= 2.5 { return .gray }
         else if avg >= 1.5 { return .orange }
         else { return .red }
+    }
+    
+    private func formatTimeDifference(_ timeInterval: TimeInterval) -> String {
+        let minutes = Int(timeInterval / 60)
+        let absMinutes = abs(minutes)
+        let sign = minutes >= 0 ? "+" : "-"
+        
+        if absMinutes >= 60 {
+            let hours = absMinutes / 60
+            let remainingMinutes = absMinutes % 60
+            if remainingMinutes == 0 {
+                return "\(sign)\(hours)h"
+            }
+            return "\(sign)\(hours)h\(remainingMinutes)m"
+        } else {
+            return "\(sign)\(absMinutes)m"
+        }
+    }
+    
+    private func timeDifferenceColor(_ timeInterval: TimeInterval) -> Color {
+        let minutes = timeInterval / 60
+        if minutes < -30 { return .purple } // 30分以上早い
+        else if minutes < 0 { return .green } // 早め
+        else if minutes < 30 { return .blue } // 30分以内の遅延
+        else if minutes < 60 { return .orange } // 30分〜60分の遅延
+        else { return .red } // 60分以上の遅延
     }
 }
 
@@ -1313,6 +1368,7 @@ struct WeeklyStatistics: Identifiable {
     let avgRestrictionTime: TimeInterval
     let avgBubbleOutsideCount: Double
     let avgConcentration: Double?
+    let avgCompletionTimeDifference: TimeInterval? // タスク遂行時間差の平均（秒）
     let dailyStats: [DailyStatistics]
 }
 
